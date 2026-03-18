@@ -157,8 +157,16 @@ export default function AccountPage({ loaderData }: Route.ComponentProps) {
   }
 
   async function doSignOut() {
-    await fetch("/api/auth/sign-out", { method: "POST" })
-    navigate("/")
+    try {
+      await fetch("/api/auth/sign-out", {
+        method: "POST",
+        credentials: "include",
+      })
+    } finally {
+      // Hard redirect — clears any in-memory state and forces a full server round-trip
+      // so the loader on the landing page sees no session
+      window.location.href = "/"
+    }
   }
 
   async function doChangePw() {
@@ -195,11 +203,21 @@ export default function AccountPage({ loaderData }: Route.ComponentProps) {
       const res = await fetch("/api/auth/delete-user", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ password: curPw || undefined }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.message ?? "Failed to delete account.")
-      navigate("/")
+      if (!res.ok) {
+        const text = await res.text()
+        let msg = "Failed to delete account."
+        try {
+          msg = (JSON.parse(text) as { message?: string }).message ?? msg
+        } catch {
+          /* empty body */
+        }
+        throw new Error(msg)
+      }
+      // Success — hard redirect to clear session state
+      window.location.href = "/"
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong.")
     } finally {

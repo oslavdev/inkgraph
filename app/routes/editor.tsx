@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useFetcher, useLoaderData, useNavigate } from "react-router"
+import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router"
 import {
   C,
   Canvas,
@@ -8,50 +8,59 @@ import {
   GuideModal,
   HOTKEYS,
   IBtn,
-  LocalStorageNotice,
   NodePanel,
   PANELS,
-  ProfileModal,
   ScenesPanel,
   Tooltip,
   VariablesPanel,
   useTree,
 } from "../components/editor-core"
-import { createProject, deleteProject, listProjects, saveProject } from "../server/projects.server"
-import type { Project } from "../server/schema.server"
+import {
+  createProject,
+  emptyProjectData,
+  getLastOpenedProject,
+  getProject,
+  saveProject,
+  touchProject,
+} from "../server/projects.server"
 import { requireUser } from "../server/session.server"
 import type { Route } from "./+types/editor"
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await requireUser(request)
-  const projects = await listProjects(user.id)
-  return { user, projects }
+
+  // /editor/:projectId — load specific project
+  if (params.projectId) {
+    const project = await getProject(params.projectId, user.id)
+    if (!project) throw redirect("/projects")
+    await touchProject(project.id, user.id)
+    return { user, project }
+  }
+
+  // /editor — load last opened or create new
+  const last = await getLastOpenedProject(user.id)
+  if (last) {
+    throw redirect(`/editor/${last.id}`)
+  }
+  const fresh = await createProject(user.id, "My first project", "", emptyProjectData())
+  throw redirect(`/editor/${fresh.id}`)
 }
 
-// ─── Action ───────────────────────────────────────────────────────────────────
+// ─── Action — auto-save ───────────────────────────────────────────────────────
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ request, params }: Route.ActionArgs) {
   const user = await requireUser(request)
   const form = await request.formData()
   const intent = form.get("intent") as string
 
-  if (intent === "save") {
-    const id = form.get("id") as string | null
+  if (intent === "autosave") {
+    const id = params.projectId as string
     const name = (form.get("name") as string) || "Untitled"
+    const description = (form.get("description") as string) || ""
     const data = JSON.parse(form.get("data") as string)
-    if (id) {
-      await saveProject(id, user.id, name, data)
-      return { ok: true, id }
-    }
-    const project = await createProject(user.id, name, data)
-    return { ok: true, id: project.id }
-  }
-
-  if (intent === "delete") {
-    const id = form.get("id") as string
-    await deleteProject(id, user.id)
+    await saveProject(id, user.id, name, description, data)
     return { ok: true }
   }
 
@@ -117,27 +126,156 @@ function DownloadBtn({ mobile = false }: { mobile?: boolean }) {
   )
 }
 
-// ─── Editor component ─────────────────────────────────────────────────────────
+// ─── Ko-fi nudge ──────────────────────────────────────────────────────────────
 
+function KofiNudge({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 24,
+        right: 24,
+        zIndex: 500,
+        width: "min(320px, calc(100vw - 48px))",
+        background: "#0f0f0f",
+        border: "1px solid #2a2a2a",
+        borderRadius: 10,
+        overflow: "hidden",
+        boxShadow: "0 16px 48px rgba(0,0,0,0.8)",
+        animation: "slideUp 0.25s ease-out",
+      }}
+    >
+      <style>
+        {`
+        @keyframes slideUp { 
+          from { opacity:0; transform:translateY(12px); } 
+          to { opacity:1; transform:translateY(0); } 
+        }`}
+      </style>
+      <div style={{ height: 3, background: "linear-gradient(90deg,#ff5f5f,#ff9f9f)" }} />
+      <div style={{ padding: "16px 18px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+          <span style={{ fontSize: 24, flexShrink: 0 }}>☕</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#e5e5e5", marginBottom: 4 }}>
+              Enjoying Inkgraph?
+            </div>
+            <div style={{ fontSize: 12, color: "#666", lineHeight: 1.6 }}>
+              If it&apos;s useful, consider supporting development on Ko-fi. It keeps the project
+              alive!
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => {
+              window.open("https://ko-fi.com/oslavdevelopment#", "_blank", "noopener,noreferrer")
+              onDismiss()
+            }}
+            style={{
+              flex: 1,
+              background: "#ff5f5f",
+              border: "none",
+              borderRadius: 5,
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 600,
+              padding: "8px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M18 8h1a4 4 0 0 1 0 8h-1"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Support on Ko-fi
+          </button>
+          <button
+            type="button"
+            onClick={onDismiss}
+            style={{
+              background: "transparent",
+              border: "1px solid #2a2a2a",
+              borderRadius: 5,
+              color: "#555",
+              fontSize: 12,
+              padding: "8px 12px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Maybe later
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface BarAction {
+  label: string
+  color: string
+  action: () => void
+  active?: boolean
+}
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: top-level route component with necessarily complex state
 export default function EditorRoute() {
   const navigate = useNavigate()
-  const { user, projects } = useLoaderData<typeof loader>()
+  const { user, project } = useLoaderData<typeof loader>()
   const fetcher = useFetcher<typeof action>()
+
+  // Seed localStorage keyed by project.id — re-seeds whenever project changes
+  const seededRef = useRef("")
+  if (seededRef.current !== project.id && typeof window !== "undefined") {
+    seededRef.current = project.id
+    try {
+      const d = JSON.parse(project.data) as {
+        scenes?: unknown
+        nodesByScene?: unknown
+        characters?: unknown
+        variables?: unknown
+      }
+      // Always overwrite so switching projects clears stale canvas state
+      localStorage.setItem("vn2-scenes", JSON.stringify(d.scenes ?? []))
+      localStorage.setItem("vn2-nbs", JSON.stringify(d.nodesByScene ?? {}))
+      localStorage.setItem("vn2-chars", JSON.stringify(d.characters ?? []))
+      localStorage.setItem("vn2-vars", JSON.stringify(d.variables ?? []))
+      localStorage.removeItem("vn2-active-scene") // let useTree pick the first scene fresh
+    } catch {
+      /* ignore parse errors — useTree will init defaults */
+    }
+  }
 
   // tree must be declared before any hook that references it
   const tree = useTree()
   const { nodes, sel, setSel, addNode, addChoice, delNode, movNode, rootId } = tree
 
-  const [projectId, setProjectId] = useState<string | null>(null)
-  const [projectName, setProjectName] = useState("Untitled")
-  const [saveMsg, setSaveMsg] = useState("")
+  const [projectName, setProjectName] = useState(project.name)
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
   const [showHelp, setShowHelp] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
-  const [showLsNotice, setShowLsNotice] = useState(true)
   const [expanded, setExpanded] = useState(true)
   const [activePanel, setActivePanel] = useState("scenes")
   const [showNodeSheet, setShowNodeSheet] = useState(false)
-  const [showProfile, setShowProfile] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const viewRef = useRef<HTMLDivElement>(null)
 
@@ -157,80 +295,104 @@ export default function EditorRoute() {
   }, [sel, isMobile])
 
   function doSave() {
-    const sd = tree.nodesByScene ?? {}
     const data = {
       scenes: tree.scenes,
-      nodesByScene: sd,
+      nodesByScene: tree.nodesByScene ?? {},
       characters: tree.characters,
       variables: tree.variables,
     }
     const form = new FormData()
-    form.set("intent", "save")
+    form.set("intent", "autosave")
     form.set("name", projectName)
+    form.set("description", project.description ?? "")
     form.set("data", JSON.stringify(data))
-    if (projectId) form.set("id", projectId)
     fetcher.submit(form, { method: "post" })
+    setSaveStatus("saving")
   }
 
   // Auto-save every 30 seconds when a project is open
+  // doSave reads projectName/tree via closure — wrap in ref to avoid stale deps
+  const doSaveRef = useRef(doSave)
+  useEffect(() => {
+    doSaveRef.current = doSave
+  })
   useEffect(() => {
     const interval = setInterval(() => {
-      if (projectId) doSave()
+      doSaveRef.current()
     }, 30_000)
     return () => clearInterval(interval)
-    // doSave is stable enough; tree is intentionally excluded to avoid constant re-subscribe
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, projectName])
+  }, [project.id])
 
   // When save returns a new id, store it
   useEffect(() => {
-    if (
-      fetcher.data &&
-      "ok" in fetcher.data &&
-      fetcher.data.ok &&
-      "id" in fetcher.data &&
-      fetcher.data.id
-    ) {
-      setProjectId(fetcher.data.id as string)
-      setSaveMsg("Saved")
-      setTimeout(() => setSaveMsg(""), 2000)
+    if (fetcher.data && "ok" in fetcher.data && fetcher.data.ok) {
+      setSaveStatus("saved")
+      setTimeout(() => setSaveStatus("idle"), 2000)
     }
   }, [fetcher.data])
 
+  function handleMovement(e: KeyboardEvent) {
+    if (!sel) return
+    if (e.key === "ArrowLeft") movNode(sel, -10, 0)
+    else if (e.key === "ArrowRight") movNode(sel, 10, 0)
+    else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      movNode(sel, 0, -10)
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault()
+      movNode(sel, 0, 10)
+    }
+  }
+
+  function handleTab(e: KeyboardEvent) {
+    e.preventDefault()
+    const ids = Object.keys(nodes)
+    const idx = ids.indexOf(sel ?? "")
+    setSel(ids[(idx + 1) % ids.length])
+  }
+
+  function handleEscape() {
+    setShowHelp(false)
+    setShowNodeSheet(false)
+  }
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: keyboard handler needs all cases
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
-      if (e.key === "n" || e.key === "N") {
-        if (sel) addNode(sel)
-      } else if (e.key === "c" || e.key === "C") {
-        if (sel) addChoice(sel)
-      } else if (e.key === "Delete") {
-        if (sel && sel !== rootId) delNode(sel)
-      } else if (e.key === "ArrowLeft") {
-        if (sel) movNode(sel, -10, 0)
-      } else if (e.key === "ArrowRight") {
-        if (sel) movNode(sel, 10, 0)
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault()
-        if (sel) movNode(sel, 0, -10)
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault()
-        if (sel) movNode(sel, 0, 10)
-      } else if (e.key === "Tab") {
-        e.preventDefault()
-        const ids = Object.keys(nodes)
-        const idx = ids.indexOf(sel ?? "")
-        setSel(ids[(idx + 1) % ids.length])
-      } else if (e.key === "?") {
-        setShowHelp((h) => !h)
-      } else if (e.key === "Escape") {
-        setShowHelp(false)
-        setShowLsNotice(false)
-        setShowNodeSheet(false)
-        setShowProfile(false)
+      switch (e.key) {
+        case "n":
+        case "N":
+          if (sel) addNode(sel)
+          break
+        case "c":
+        case "C":
+          if (sel) addChoice(sel)
+          break
+        case "Delete":
+          if (sel && sel !== rootId) delNode(sel)
+          break
+        case "ArrowLeft":
+        case "ArrowRight":
+        case "ArrowUp":
+        case "ArrowDown":
+          handleMovement(e)
+          break
+        case "Tab":
+          handleTab(e)
+          break
+        case "?":
+          setShowHelp((h) => !h)
+          break
+        case "Escape":
+          handleEscape()
+          break
+        default:
+          break
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [sel, nodes, addNode, addChoice, delNode, movNode, rootId, setSel]
   )
 
@@ -271,42 +433,19 @@ export default function EditorRoute() {
     return null
   }
 
-  function loadProject(p: Project) {
-    setProjectId(p.id)
-    setProjectName(p.name)
-    const d = JSON.parse(p.data) as {
-      scenes?: unknown
-      nodesByScene?: unknown
-      characters?: unknown
-      variables?: unknown
-    }
-    if (d.scenes) localStorage.setItem("vn2-scenes", JSON.stringify(d.scenes))
-    if (d.nodesByScene) localStorage.setItem("vn2-nbs", JSON.stringify(d.nodesByScene))
-    if (d.characters) localStorage.setItem("vn2-chars", JSON.stringify(d.characters))
-    if (d.variables) localStorage.setItem("vn2-vars", JSON.stringify(d.variables))
-    window.location.reload()
-  }
-
   const initials = (user.name || user.email).slice(0, 2).toUpperCase()
 
-  const notice = showLsNotice && (
-    <LocalStorageNotice
-      onClose={() => setShowLsNotice(false)}
-      onLogin={() => setShowLsNotice(false)}
-      onRegister={() => setShowLsNotice(false)}
-    />
-  )
+  // Ko-fi nudge after first 2 nodes created
+  const nodeCount = Object.keys(nodes).length
+  const [kofiNudgeDismissed, setKofiNudgeDismissed] = useState(false)
+  const showKofiNudge = nodeCount >= 2 && !kofiNudgeDismissed
+
+  // User is logged in — no need for the localStorage/auth notice
+  const notice = null
 
   // ── Mobile ──────────────────────────────────────────────────────────────────
 
   if (isMobile) {
-    interface BarAction {
-      label: string
-      color: string
-      action: () => void
-      active?: boolean
-    }
-
     const barActions: BarAction[] = [
       {
         label: "+ Node",
@@ -360,7 +499,7 @@ export default function EditorRoute() {
       >
         {notice}
         {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
-        {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+        {showKofiNudge && <KofiNudge onDismiss={() => setKofiNudgeDismissed(true)} />}
 
         <div
           style={{
@@ -400,7 +539,7 @@ export default function EditorRoute() {
           <div style={{ flex: 1 }} />
           <button
             type="button"
-            onClick={() => setShowProfile(true)}
+            onClick={() => navigate("/account")}
             style={{
               width: 30,
               height: 30,
@@ -686,9 +825,9 @@ export default function EditorRoute() {
     >
       {notice}
       {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
-      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+      {showKofiNudge && <KofiNudge onDismiss={() => setKofiNudgeDismissed(true)} />}
 
-      {/* Save bar */}
+      {/* Top bar */}
       <div
         style={{
           height: 38,
@@ -702,9 +841,40 @@ export default function EditorRoute() {
           zIndex: 5,
         }}
       >
+        <button
+          type="button"
+          onClick={() => navigate("/projects")}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: C.textMuted,
+            fontSize: 11,
+            cursor: "pointer",
+            fontFamily: "monospace",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            flexShrink: 0,
+            padding: "0 4px 0 0",
+          }}
+          aria-label="Back to projects"
+        >
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M19 12H5M5 12l7-7M5 12l7 7"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Projects
+        </button>
+        <span style={{ color: C.border, fontSize: 14 }}>/</span>
         <input
           value={projectName}
           onChange={(e) => setProjectName(e.target.value)}
+          onBlur={doSave}
           aria-label="Project name"
           style={{
             background: "transparent",
@@ -715,79 +885,31 @@ export default function EditorRoute() {
             outline: "none",
             fontFamily: "inherit",
             minWidth: 0,
-            flex: "0 1 240px",
+            flex: "0 1 200px",
           }}
           placeholder="Untitled"
         />
         <div style={{ flex: 1 }} />
-        {saveMsg && (
-          <span style={{ fontSize: 11, color: C.success, fontFamily: "monospace" }}>{saveMsg}</span>
+        {saveStatus === "saving" && (
+          <span style={{ fontSize: 10, color: C.textMuted, fontFamily: "monospace" }}>Saving…</span>
         )}
-        {fetcher.state === "submitting" && (
-          <span style={{ fontSize: 11, color: C.textMuted, fontFamily: "monospace" }}>Saving…</span>
+        {saveStatus === "saved" && (
+          <span style={{ fontSize: 10, color: C.success, fontFamily: "monospace" }}>✓ Saved</span>
         )}
-        <select
-          value={projectId ?? ""}
-          aria-label="Open project"
-          onChange={(e) => {
-            const id = e.target.value
-            if (!id) {
-              setProjectId(null)
-              setProjectName("Untitled")
-              return
-            }
-            const p = projects.find((x) => x.id === id)
-            if (p) loadProject(p)
-          }}
-          style={{
-            background: "#111",
-            border: `1px solid ${C.border}`,
-            borderRadius: 4,
-            color: C.textDim,
-            fontSize: 11,
-            padding: "3px 6px",
-            fontFamily: "monospace",
-            outline: "none",
-            maxWidth: 180,
-          }}
-        >
-          <option value="">— new project —</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={doSave}
-          style={{
-            background: C.accent,
-            border: "none",
-            borderRadius: 4,
-            color: "#fff",
-            fontSize: 11,
-            fontWeight: 600,
-            padding: "4px 12px",
-            cursor: "pointer",
-            fontFamily: "monospace",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Save
-        </button>
         <button
           type="button"
           onClick={() => navigate("/account")}
           style={{
-            background: "transparent",
-            border: `1px solid ${C.border}`,
+            background: `linear-gradient(135deg,${C.accent},#a855f7)`,
+            border: "none",
             borderRadius: 4,
-            color: C.textMuted,
+            color: "#fff",
             fontSize: 11,
+            fontWeight: 700,
             padding: "4px 10px",
             cursor: "pointer",
             fontFamily: "monospace",
+            letterSpacing: 0.3,
           }}
         >
           {user.name.split(" ")[0]}
@@ -834,27 +956,6 @@ export default function EditorRoute() {
             </Tooltip>
           ))}
           <div style={{ flex: 1 }} />
-          <Tooltip label="My Profile">
-            <button
-              type="button"
-              onClick={() => setShowProfile(true)}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 7,
-                background: `linear-gradient(135deg,${C.accent},#a855f7)`,
-                border: "none",
-                color: "#fff",
-                fontSize: 10,
-                fontWeight: 700,
-                cursor: "pointer",
-                marginBottom: 2,
-                letterSpacing: 0.5,
-              }}
-            >
-              {initials}
-            </button>
-          </Tooltip>
           <Tooltip label="User Guide">
             <button
               type="button"
@@ -1091,7 +1192,7 @@ export default function EditorRoute() {
             }}
           >
             <span>auto-saved</span>
-            <span style={{ color: "#1a3a1a" }}>{projectId ? "server-synced" : "localStorage"}</span>
+            <span style={{ color: "#1a3a1a" }}>server-synced</span>
           </div>
         </div>
       </div>

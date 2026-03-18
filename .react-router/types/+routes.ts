@@ -14,8 +14,16 @@ type Pages = {
   "/": {
     params: {};
   };
+  "/projects": {
+    params: {};
+  };
   "/editor": {
     params: {};
+  };
+  "/editor/:projectId": {
+    params: {
+      "projectId": string;
+    };
   };
   "/login": {
     params: {};
@@ -36,15 +44,22 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/editor" | "/login" | "/reset-password" | "/account" | "/api/auth/*";
+    page: "/" | "/projects" | "/editor" | "/editor/:projectId" | "/login" | "/reset-password" | "/account" | "/api/auth/*";
   };
   "routes/home.tsx": {
     id: "routes/home";
     page: "/";
   };
+  "routes/projects.tsx": {
+    id: "routes/projects";
+    page: "/projects";
+  };
   "routes/editor.tsx": {
     id: "routes/editor";
-    page: "/editor";
+    page: "/editor" | "/editor/:projectId";
+  } | {
+    id: "editor-project";
+    page: "/editor/:projectId";
   };
   "routes/login.tsx": {
     id: "routes/login";
@@ -67,7 +82,9 @@ type RouteFiles = {
 type RouteModules = {
   "root": typeof import("./app/root.tsx");
   "routes/home": typeof import("./app/routes/home.tsx");
+  "routes/projects": typeof import("./app/routes/projects.tsx");
   "routes/editor": typeof import("./app/routes/editor.tsx");
+  "editor-project": typeof import("./app/routes/editor.tsx");
   "routes/login": typeof import("./app/routes/login.tsx");
   "routes/reset-password": typeof import("./app/routes/reset-password.tsx");
   "routes/account": typeof import("./app/routes/account.tsx");

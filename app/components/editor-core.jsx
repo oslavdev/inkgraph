@@ -381,6 +381,7 @@ function Minimap({ nodes, pan, viewW, viewH }) {
       }}
     >
       <svg width={MM_W} height={MM_H}>
+        <title>Minimap</title>
         {nlist.map((nd) => {
           const tag = TAG_DEFS[nd.tag || "none"]
           return (
@@ -414,6 +415,7 @@ function Minimap({ nodes, pan, viewW, viewH }) {
               />
             )
           }
+          // biome-ignore lint/complexity/noForEach: <explanation>
           nd.choices.forEach((ch) => {
             if (ch.nextId && nodes[ch.nextId]) {
               const t = nodes[ch.nextId]
@@ -489,8 +491,8 @@ function Canvas({ tree, viewRef }) {
     const r = svgRef.current?.getBoundingClientRect()
     if (conn && r) setConn((c) => ({ ...c, mx: e.clientX - r.left, my: e.clientY - r.top }))
     if (!lastM.current) return
-    const dx = e.clientX - lastM.current.x,
-      dy = e.clientY - lastM.current.y
+    const dx = e.clientX - lastM.current.x
+    const dy = e.clientY - lastM.current.y
     lastM.current = { x: e.clientX, y: e.clientY }
     if (dragN) movNode(dragN, dx, dy)
     else if (panning) setPan((p) => ({ x: p.x + dx, y: p.y + dy }))
@@ -525,8 +527,8 @@ function Canvas({ tree, viewRef }) {
     e.preventDefault()
     const touch = e.touches[0]
     if (!lastM.current) return
-    const dx = touch.clientX - lastM.current.x,
-      dy = touch.clientY - lastM.current.y
+    const dx = touch.clientX - lastM.current.x
+    const dy = touch.clientY - lastM.current.y
     lastM.current = { x: touch.clientX, y: touch.clientY }
     if (dragN) movNode(dragN, dx, dy)
     else if (panning) setPan((p) => ({ x: p.x + dx, y: p.y + dy }))
@@ -560,6 +562,7 @@ function Canvas({ tree, viewRef }) {
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
+        <title>Canvas</title>
         <defs>
           {[C.accent, C.warn].map((col) => (
             <marker
@@ -580,13 +583,13 @@ function Canvas({ tree, viewRef }) {
         {Array.from({ length: Math.ceil(4000 / GRID) + 2 }, (_, i) => {
           const x = (pan.x % GRID) + i * GRID - GRID
           return (
-            <line key={"v" + i} x1={x} y1={0} x2={x} y2={4000} stroke="#131313" strokeWidth={1} />
+            <line key={`v${x}`} x1={x} y1={0} x2={x} y2={4000} stroke="#131313" strokeWidth={1} />
           )
         })}
         {Array.from({ length: Math.ceil(4000 / GRID) + 2 }, (_, i) => {
           const y = (pan.y % GRID) + i * GRID - GRID
           return (
-            <line key={"h" + i} x1={0} y1={y} x2={4000} y2={y} stroke="#131313" strokeWidth={1} />
+            <line key={`h${y}`} x1={0} y1={y} x2={4000} y2={y} stroke="#131313" strokeWidth={1} />
           )
         })}
 
@@ -596,7 +599,7 @@ function Canvas({ tree, viewRef }) {
           if (nd.nextId && nodes[nd.nextId]) {
             arrows.push(
               <Arrow
-                key={nd.id + "n"}
+                key={`${nd.id}n`}
                 from={getOut(nd, pan)}
                 to={getIn(nodes[nd.nextId], pan)}
                 color={C.accent}
@@ -803,8 +806,8 @@ function Canvas({ tree, viewRef }) {
                 />
               )}
               {nd.choices.map((ch, i) => {
-                const cx = nx + (NODE_W / (nd.choices.length + 1)) * (i + 1),
-                  cy = ny + NODE_H
+                const cx = nx + (NODE_W / (nd.choices.length + 1)) * (i + 1)
+                const cy = ny + NODE_H
                 return (
                   <Port
                     key={ch.id}
@@ -879,6 +882,7 @@ const IBtn = ({ style, ...p }) => (
 )
 const SmBtn = ({ onClick, children, color = C.accent }) => (
   <button
+    type="button"
     onClick={onClick}
     style={{
       background: "transparent",
@@ -905,6 +909,7 @@ function ScenesPanel({ tree }) {
       <div style={{ flex: 1, overflowY: "auto" }}>
         {scenes.map((sc) => (
           <div key={sc.id} style={{ borderBottom: "1px solid #141414" }}>
+
             <div
               style={{
                 display: "flex",
@@ -915,6 +920,15 @@ function ScenesPanel({ tree }) {
                 background: sc.id === activeSceneId ? "#141422" : "transparent",
               }}
               onClick={() => switchScene(sc.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  switchScene(sc.id)
+                }
+              }}
+              /** biome-ignore  lint/a11y/useSemanticElements: div required**/
+              role="button"
+              tabIndex={0}
             >
               <div
                 style={{
@@ -927,7 +941,7 @@ function ScenesPanel({ tree }) {
               />
               {editing === sc.id ? (
                 <input
-                  autoFocus
+             
                   value={sc.name}
                   onChange={(e) => updateScene(sc.id, { name: e.target.value })}
                   onBlur={() => setEditing(null)}
@@ -1015,6 +1029,7 @@ function ScenesPanel({ tree }) {
           }}
         />
         <button
+        type='button'
           onClick={() => newName.trim() && (addScene(newName.trim()), setNewName(""))}
           style={{
             background: C.accent,
@@ -1047,6 +1062,7 @@ function CharactersPanel({ tree }) {
         {characters.map((ch) => (
           <div key={ch.id} style={{ borderBottom: "1px solid #141414" }}>
             <div
+            
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -1055,6 +1071,15 @@ function CharactersPanel({ tree }) {
                 cursor: "pointer",
               }}
               onClick={() => setEditing(editing === ch.id ? null : ch.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  setEditing(editing === ch.id ? null : ch.id)
+                }
+              }}
+               /** biome-ignore  lint/a11y/useSemanticElements: div required**/
+              role="button"
+              tabIndex={0}
             >
               <div
                 style={{
@@ -1122,6 +1147,14 @@ function CharactersPanel({ tree }) {
                     <div
                       key={col}
                       onClick={() => updateChar(ch.id, { color: col })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          updateChar(ch.id, { color: col })
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                       style={{
                         width: 16,
                         height: 16,
@@ -1145,6 +1178,7 @@ function CharactersPanel({ tree }) {
             const c = addChar()
             setEditing(c.id)
           }}
+          type='button'
           style={{
             width: "100%",
             background: "transparent",
@@ -2650,12 +2684,12 @@ function ProfileModal({ onClose }) {
                   </svg>
                 </button>
                 <button
-                type="button"
+                  type="button"
                   onClick={() => setSection("delete")}
                   style={{
                     width: "100%",
                     background: "transparent",
-                    border: '1px solid #3a1010',
+                    border: "1px solid #3a1010",
                     borderRadius: 6,
                     color: "#cc4444",
                     fontSize: 13,

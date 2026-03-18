@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 // Mock the db module before importing projects
-vi.mock("~/server/db.server", () => ({
+vi.mock("../server/db.server", () => ({
   db: {
     select: vi.fn(),
     insert: vi.fn(),

@@ -61,10 +61,12 @@ export const project = sqliteTable("project", {
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   name: text("name").notNull().default("Untitled"),
+  description: text("description").notNull().default(""),
   // Full project JSON: { scenes, nodesByScene, characters, variables }
   data: text("data").notNull().default("{}"),
-  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
-  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  lastOpenedAt: integer("lastOpenedAt", { mode: "number" }),
+  createdAt: integer("createdAt", { mode: "number" }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updatedAt", { mode: "number" }).notNull().default(sql`(unixepoch())`),
 })
 
 export type User = typeof user.$inferSelect
