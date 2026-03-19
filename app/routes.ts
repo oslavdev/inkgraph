@@ -9,5 +9,6 @@ export default [
   route("login", "routes/login.tsx"),
   route("reset-password", "routes/reset-password.tsx"),
   route("account", "routes/account.tsx"),
+  route("simulator", "routes/simulator.tsx"),
   route("api/auth/*", "routes/api.auth.$.ts"),
 ] satisfies RouteConfig

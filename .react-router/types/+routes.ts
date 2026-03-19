@@ -34,6 +34,9 @@ type Pages = {
   "/account": {
     params: {};
   };
+  "/simulator": {
+    params: {};
+  };
   "/api/auth/*": {
     params: {
       "*": string;
@@ -44,7 +47,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/projects" | "/editor" | "/editor/:projectId" | "/login" | "/reset-password" | "/account" | "/api/auth/*";
+    page: "/" | "/projects" | "/editor" | "/editor/:projectId" | "/login" | "/reset-password" | "/account" | "/simulator" | "/api/auth/*";
   };
   "routes/home.tsx": {
     id: "routes/home";
@@ -73,6 +76,10 @@ type RouteFiles = {
     id: "routes/account";
     page: "/account";
   };
+  "routes/simulator.tsx": {
+    id: "routes/simulator";
+    page: "/simulator";
+  };
   "routes/api.auth.$.ts": {
     id: "routes/api.auth.$";
     page: "/api/auth/*";
@@ -88,5 +95,6 @@ type RouteModules = {
   "routes/login": typeof import("./app/routes/login.tsx");
   "routes/reset-password": typeof import("./app/routes/reset-password.tsx");
   "routes/account": typeof import("./app/routes/account.tsx");
+  "routes/simulator": typeof import("./app/routes/simulator.tsx");
   "routes/api.auth.$": typeof import("./app/routes/api.auth.$.ts");
 };

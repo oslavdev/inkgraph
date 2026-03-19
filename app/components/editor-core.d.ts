@@ -100,7 +100,8 @@ export interface TreeState {
   sel: string | null
   setSel: (id: string | null) => void
   upd: (id: string, patch: Partial<Node>) => void
-  addNode: (afterId: string) => void
+  addNode: (afterId: string, choiceId?: string | null, ox?: number) => string
+  addNodeSmart: (fromId: string) => void
   addChoice: (nodeId: string) => void
   remChoice: (nodeId: string, choiceId: string) => void
   updChoice: (nodeId: string, choiceId: string, patch: Partial<Choice>) => void
@@ -125,6 +126,7 @@ export interface TreeState {
   nodesByScene: Record<string, SceneData>
   exportAll: () => string
   importAll: (json: string) => void
+  undo: () => void
 }
 
 interface InitialData {

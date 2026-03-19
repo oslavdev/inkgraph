@@ -21,18 +21,18 @@ import {
   getProject,
   saveProject,
   touchProject,
+  updateProjectMeta,
 } from "../server/projects.server"
 import { getSession } from "../server/session.server"
-import type { Route } from "./+types/editor"
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
-export async function loader({ request, params }: Route.LoaderArgs) {
+export async function loader({ request, params }: { request: Request; params: Record<string, string | undefined> }) {
   const session = await getSession(request)
 
-  // Guest mode — no session, no projectId
+  // Guest mode — allow through, project data comes from localStorage
   if (!session) {
-    if (params.projectId) throw redirect("/editor")
+    if (params.projectId) throw redirect("/editor") // guests have no server projects
     return { user: null, project: null }
   }
 
@@ -56,7 +56,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 // ─── Action — auto-save ───────────────────────────────────────────────────────
 
-export async function action({ request, params }: Route.ActionArgs) {
+export async function action({ request, params }: { request: Request; params: Record<string, string | undefined> }) {
   const session = await getSession(request)
   if (!session) return { ok: false, error: "Not authenticated" }
   const user = session.user
@@ -64,12 +64,21 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = form.get("intent") as string
 
   if (intent === "autosave") {
-    const id = params.projectId
+    // Read id from form — more reliable than params which can be undefined on parent route
+    const id = (form.get("id") as string) || params.projectId
     if (!id) return { ok: false, error: "No project ID" }
     const name = (form.get("name") as string) || "Untitled"
     const description = (form.get("description") as string) || ""
     const data = JSON.parse(form.get("data") as string)
     await saveProject(id, user.id, name, description, data)
+    return { ok: true }
+  }
+
+  if (intent === "rename") {
+    const id = (form.get("id") as string) || params.projectId
+    if (!id) return { ok: false, error: "No project ID" }
+    const name = (form.get("name") as string) || "Untitled"
+    await updateProjectMeta(id, user.id, name, "")
     return { ok: true }
   }
 
@@ -279,9 +288,16 @@ export default function EditorRoute() {
     try { return project ? JSON.parse(project.data) : null } catch { return null }
   })()
   const tree = useTree(initialData)
-  const { nodes, sel, setSel, addNode, addChoice, delNode, movNode, rootId } = tree
+  const { nodes, sel, setSel, addNode, addNodeSmart, addChoice, delNode, movNode, rootId, undo } = tree
 
-  const [projectName, setProjectName] = useState(project?.name ?? "")
+  const [projectName, setProjectName] = useState(() => {
+    if (project?.name) return project.name
+    // Guest: name was stored in localStorage when the project was opened
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("vn2-project-name") ?? "Untitled"
+    }
+    return "Untitled"
+  })
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
   const [showHelp, setShowHelp] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
@@ -313,14 +329,36 @@ export default function EditorRoute() {
       characters: tree.characters,
       variables: tree.variables,
     }
-    if (!project) return // guest mode — no server project to save
+    if (!project) {
+      // Guest: persist name to localStorage so it survives navigation
+      if (typeof window !== "undefined") {
+        localStorage.setItem("vn2-project-name", projectName)
+      }
+      return
+    }
     const form = new FormData()
     form.set("intent", "autosave")
+    form.set("id", project.id)
     form.set("name", projectName)
     form.set("description", project.description ?? "")
     form.set("data", JSON.stringify(data))
     fetcher.submit(form, { method: "post" })
     setSaveStatus("saving")
+  }
+
+  // Rename-only save — fires immediately on name input blur without waiting for full autosave
+  function doRenameSave() {
+    if (!project) {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("vn2-project-name", projectName)
+      }
+      return
+    }
+    const form = new FormData()
+    form.set("intent", "rename")
+    form.set("id", project.id)
+    form.set("name", projectName)
+    fetcher.submit(form, { method: "post" })
   }
 
   // Auto-save every 30 seconds when a project is open
@@ -381,7 +419,7 @@ export default function EditorRoute() {
       switch (e.key) {
         case "n":
         case "N":
-          if (sel) addNode(sel)
+          if (sel) addNodeSmart(sel)
           break
         case "c":
         case "C":
@@ -399,6 +437,10 @@ export default function EditorRoute() {
         case "Tab":
           handleTab(e)
           break
+        case "z":
+        case "Z":
+          undo()
+          break
         case "?":
           setShowHelp((h) => !h)
           break
@@ -410,7 +452,7 @@ export default function EditorRoute() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sel, nodes, addNode, addChoice, delNode, movNode, rootId, setSel]
+    [sel, nodes, addNode, addNodeSmart, addChoice, delNode, movNode, rootId, setSel, undo]
   )
 
   useEffect(() => {
@@ -459,90 +501,8 @@ export default function EditorRoute() {
 
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
-  const [guestDismissed, setGuestDismissed] = useState(false)
-  const isGuest = !user
-
-  const guestNotice = isGuest && !guestDismissed ? (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 400,
-        background: "rgba(0,0,0,0.75)",
-        backdropFilter: "blur(4px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-      }}
-    >
-      <div
-        style={{
-          width: "min(440px, 92vw)",
-          background: "#0f0f0f",
-          border: "1px solid #2a2a2a",
-          borderRadius: 12,
-          overflow: "hidden",
-          boxShadow: "0 24px 80px rgba(0,0,0,0.9)",
-        }}
-      >
-        <div style={{ height: 3, background: "linear-gradient(90deg,#6366f1,#a855f7)" }} />
-        <div style={{ padding: "28px 28px 24px" }}>
-          <div style={{ fontSize: 22, fontWeight: 700, color: "#e5e5e5", marginBottom: 8 }}>
-            Welcome to Inkgraph
-          </div>
-          <p style={{ fontSize: 14, color: "#666", lineHeight: 1.75, marginBottom: 24 }}>
-            You&apos;re not signed in. You can still use the editor — your work will be saved in
-            your browser&apos;s local storage, but it won&apos;t sync across devices and will be
-            lost if you clear your browser data.
-          </p>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={() => navigate("/login")}
-              style={{
-                flex: "1 1 160px",
-                background: "#6366f1",
-                border: "none",
-                borderRadius: 7,
-                color: "#fff",
-                fontSize: 13,
-                fontWeight: 600,
-                padding: "11px 16px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              Sign in / Create account
-            </button>
-            <button
-              type="button"
-              onClick={() => setGuestDismissed(true)}
-              style={{
-                flex: "1 1 120px",
-                background: "transparent",
-                border: "1px solid #2a2a2a",
-                borderRadius: 7,
-                color: "#888",
-                fontSize: 13,
-                fontWeight: 500,
-                padding: "11px 16px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              Continue as guest
-            </button>
-          </div>
-          <p style={{ fontSize: 11, color: "#333", fontFamily: "monospace", marginTop: 16, marginBottom: 0 }}>
-            Your work saves to localStorage. Sign in anytime to sync it to the cloud.
-          </p>
-        </div>
-      </div>
-    </div>
-  ) : null
-
-  const notice = guestNotice
+  // Guests are redirected to /projects by the loader — no guest modal needed here
+  const notice = null
 
   // ── Mobile ──────────────────────────────────────────────────────────────────
 
@@ -552,7 +512,7 @@ export default function EditorRoute() {
         label: "+ Node",
         color: sel ? C.accent : C.textMuted,
         action: () => {
-          if (sel) addNode(sel)
+          if (sel) addNodeSmart(sel)
         },
       },
       {
@@ -977,7 +937,7 @@ export default function EditorRoute() {
         <input
           value={projectName}
           onChange={(e) => setProjectName(e.target.value)}
-          onBlur={doSave}
+          onBlur={doRenameSave}
           aria-label="Project name"
           style={{
             background: "transparent",
@@ -999,6 +959,27 @@ export default function EditorRoute() {
         {saveStatus === "saved" && (
           <span style={{ fontSize: 10, color: C.success, fontFamily: "monospace" }}>✓ Saved</span>
         )}
+        <button
+          type="button"
+          onClick={() => navigate("/simulator")}
+          style={{
+            background: "transparent",
+            border: `1px solid ${C.border}`,
+            borderRadius: 4,
+            color: C.textMuted,
+            fontSize: 10,
+            fontWeight: 600,
+            padding: "3px 9px",
+            cursor: "pointer",
+            fontFamily: "monospace",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
+          title="Open dialogue simulator"
+        >
+          <span>🎭</span> Simulate
+        </button>
         <button
           type="button"
           onClick={() => navigate("/account")}
@@ -1275,9 +1256,27 @@ export default function EditorRoute() {
                 cursor: "pointer",
                 fontFamily: "monospace",
               }}
-              onClick={() => sel && addNode(sel)}
+              onClick={() => sel && addNodeSmart(sel)}
             >
               + Node
+            </button>
+            <button
+              type="button"
+              style={{
+                background: "transparent",
+                border: "none",
+                borderRadius: 3,
+                color: "#444",
+                fontSize: 10,
+                padding: "3px 9px",
+                cursor: "pointer",
+                fontFamily: "monospace",
+                title: "Undo (Z)",
+              }}
+              onClick={undo}
+              title="Undo (Z)"
+            >
+              ↩ Undo
             </button>
           </div>
           <div style={{ flex: 1, overflow: "hidden" }}>
