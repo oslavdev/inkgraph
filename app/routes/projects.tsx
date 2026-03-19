@@ -1,16 +1,37 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { redirect, useFetcher, useNavigate } from "react-router"
 import {
   createProject,
   deleteProject,
-  emptyProjectData,
   listProjects,
   touchProject,
   updateProjectMeta,
 } from "../server/projects.server"
 import type { Project } from "../server/schema.server"
-import { requireUser } from "../server/session.server"
-import type { Route } from "./+types/projects"
+import { getSession } from "../server/session.server"
+
+// Client-safe copy — cannot import from server module in component body
+function emptyProjectData() {
+  const sceneId = crypto.randomUUID()
+  const nodeId = crypto.randomUUID()
+  return {
+    scenes: [{ id: sceneId, name: "Scene 1", description: "" }],
+    nodesByScene: {
+      [sceneId]: {
+        root: nodeId,
+        nodes: {
+          [nodeId]: {
+            id: nodeId, x: 200, y: 120, speaker: "", characterId: null,
+            text: "", choices: [], nextId: null, tag: "none",
+            conditions: [], effects: [],
+          },
+        },
+      },
+    },
+    characters: [],
+    variables: [],
+  }
+}
 
 const C = {
   bg: "#0a0a0a",
@@ -28,16 +49,19 @@ const C = {
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const user = await requireUser(request)
-  const projects = await listProjects(user.id)
-  return { user, projects }
+export async function loader({ request }: { request: Request }) {
+  const session = await getSession(request)
+  if (!session) return { user: null, projects: [] }
+  const projects = await listProjects(session.user.id)
+  return { user: session.user, projects }
 }
 
 // ─── Action ───────────────────────────────────────────────────────────────────
 
-export async function action({ request }: Route.ActionArgs) {
-  const user = await requireUser(request)
+export async function action({ request }: { request: Request }) {
+  const session = await getSession(request)
+  if (!session) return { ok: false, error: "Not authenticated" }
+  const user = session.user
   const form = await request.formData()
   const intent = form.get("intent") as string
 
@@ -112,6 +136,7 @@ interface ProjectFormProps {
   projectId?: string
   onCancel: () => void
   fetcher: ReturnType<typeof useFetcher>
+  onGuestSubmit?: (name: string, description: string) => void
 }
 
 function ProjectForm({
@@ -122,12 +147,18 @@ function ProjectForm({
   projectId,
   onCancel,
   fetcher,
+  onGuestSubmit,
 }: ProjectFormProps) {
   const [name, setName] = useState(initialName)
   const [description, setDescription] = useState(initialDesc)
   const loading = fetcher.state !== "idle"
 
   function submit() {
+    if (onGuestSubmit) {
+      onGuestSubmit(name.trim() || "Untitled project", description.trim())
+      onCancel()
+      return
+    }
     const form = new FormData()
     form.set("intent", intent)
     form.set("name", name)
@@ -286,7 +317,6 @@ function ProjectCard({ project: p, onOpen, onRename, onDelete }: ProjectCardProp
         background: C.surface,
         border: `1px solid ${C.border}`,
         borderRadius: 10,
-        overflow: "hidden",
         cursor: "pointer",
         transition: "border-color 0.15s",
         position: "relative",
@@ -351,7 +381,7 @@ function ProjectCard({ project: p, onOpen, onRename, onDelete }: ProjectCardProp
         </div>
       </button>
 
-      {/* ⋯ menu */}
+      {/* ⋯ dropdown menu */}
       <div style={{ position: "absolute", top: 12, right: 12 }}>
         <button
           type="button"
@@ -380,22 +410,20 @@ function ProjectCard({ project: p, onOpen, onRename, onDelete }: ProjectCardProp
               role="presentation"
               style={{ position: "fixed", inset: 0, zIndex: 10 }}
               onClick={() => setMenuOpen(false)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setMenuOpen(false)
-              }}
+              onKeyDown={(e) => { if (e.key === "Escape") setMenuOpen(false) }}
             />
             <div
               style={{
                 position: "absolute",
-                top: 28,
+                top: 32,
                 right: 0,
                 zIndex: 20,
                 background: "#111",
                 border: `1px solid ${C.border2}`,
-                borderRadius: 6,
+                borderRadius: 8,
                 overflow: "hidden",
-                minWidth: 130,
-                boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+                minWidth: 150,
+                boxShadow: "0 12px 32px rgba(0,0,0,0.7)",
               }}
             >
               {[
@@ -418,7 +446,7 @@ function ProjectCard({ project: p, onOpen, onRename, onDelete }: ProjectCardProp
                     border: "none",
                     color,
                     fontSize: 13,
-                    padding: "9px 14px",
+                    padding: "10px 16px",
                     cursor: "pointer",
                     fontFamily: "inherit",
                     textAlign: "left",
@@ -437,22 +465,99 @@ function ProjectCard({ project: p, onOpen, onRename, onDelete }: ProjectCardProp
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ProjectsPage({ loaderData }: Route.ComponentProps) {
-  const { user, projects } = loaderData
+// ─── Guest localStorage helpers ──────────────────────────────────────────────
+
+const GUEST_KEY = "inkgraph-guest-projects"
+
+function loadGuestProjects(): Project[] {
+  if (typeof window === "undefined") return []
+  try {
+    return JSON.parse(localStorage.getItem(GUEST_KEY) ?? "[]") as Project[]
+  } catch { return [] }
+}
+
+function saveGuestProjects(projects: Project[]) {
+  try { localStorage.setItem(GUEST_KEY, JSON.stringify(projects)) } catch { /* noop */ }
+}
+
+function mkGuestProject(name: string, description: string): Project {
+  const now = Math.floor(Date.now() / 1000)
+  const id = Math.random().toString(36).slice(2, 11)
+  return {
+    id,
+    userId: "guest",
+    name,
+    description,
+    data: JSON.stringify(emptyProjectData()),
+    lastOpenedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export default function ProjectsPage({ loaderData }: { loaderData: { user: { name: string; email: string } | null; projects: Project[] } }) {
+  const { user } = loaderData
   const navigate = useNavigate()
   const fetcher = useFetcher<typeof action>()
+  const isGuest = !user
 
-  const [showCreate, setShowCreate] = useState(false)
+  // Guest projects live in localStorage; server projects come from loaderData
+  const [guestProjects, setGuestProjects] = useState<Project[]>([])
+  useEffect(() => { setGuestProjects(loadGuestProjects()) }, [])
+
+  const projects: Project[] = isGuest ? guestProjects : loaderData.projects
+
   const [renaming, setRenaming] = useState<Project | null>(null)
   const [deleting, setDeleting] = useState<Project | null>(null)
 
-  const initials = (user.name || user.email).slice(0, 2).toUpperCase()
+  // Logged-in: projects from loader are available immediately
+  // Guest: projects come from localStorage, loaded in the guestProjects effect below
+  const [showCreate, setShowCreate] = useState(
+    () => !isGuest && loaderData.projects.length === 0
+  )
+  // For guests: open modal after localStorage has been read and is still empty
+  const guestChecked = useRef(false)
+  useEffect(() => {
+    if (!isGuest || guestChecked.current) return
+    guestChecked.current = true
+    // At this point guestProjects has been set by the effect below
+    // We read directly from localStorage to avoid stale closure
+    const stored = loadGuestProjects()
+    if (stored.length === 0) setShowCreate(true)
+  }, [guestProjects, isGuest])
+
+  const initials = user ? (user.name || user.email).slice(0, 2).toUpperCase() : "??"
 
   function openProject(id: string) {
-    const form = new FormData()
-    form.set("intent", "open")
-    form.set("id", id)
-    fetcher.submit(form, { method: "post" })
+    if (isGuest) {
+      // Seed localStorage with this project's data then open editor
+      const p = guestProjects.find((x) => x.id === id)
+      if (p) {
+        try {
+          const d = JSON.parse(p.data) as {
+            scenes?: unknown; nodesByScene?: unknown; characters?: unknown; variables?: unknown
+          }
+          localStorage.setItem("vn2-scenes", JSON.stringify(d.scenes ?? []))
+          localStorage.setItem("vn2-nbs", JSON.stringify(d.nodesByScene ?? {}))
+          localStorage.setItem("vn2-chars", JSON.stringify(d.characters ?? []))
+          localStorage.setItem("vn2-vars", JSON.stringify(d.variables ?? []))
+          localStorage.setItem("vn2-project-name", p.name)
+          localStorage.removeItem("vn2-active-scene")
+        } catch { /* ignore */ }
+        // Touch lastOpenedAt
+        const updated = guestProjects.map((x) =>
+          x.id === id ? { ...x, lastOpenedAt: Math.floor(Date.now() / 1000) } : x
+        )
+        saveGuestProjects(updated)
+        setGuestProjects(updated)
+      }
+      navigate("/editor")
+      return
+    }
+    // Logged-in: editor loader calls touchProject, just navigate directly
+    navigate(`/editor/${id}`)
   }
 
   function confirmDelete(p: Project) {
@@ -460,6 +565,15 @@ export default function ProjectsPage({ loaderData }: Route.ComponentProps) {
   }
 
   function doDelete(p: Project) {
+    if (isGuest) {
+      setGuestProjects((prev) => {
+        const updated = prev.filter((x) => x.id !== p.id)
+        saveGuestProjects(updated)
+        return updated
+      })
+      setDeleting(null)
+      return
+    }
     const form = new FormData()
     form.set("intent", "delete")
     form.set("id", p.id)
@@ -482,7 +596,28 @@ export default function ProjectsPage({ loaderData }: Route.ComponentProps) {
           title="New project"
           intent="create"
           fetcher={fetcher}
-          onCancel={() => setShowCreate(false)}
+          onCancel={() => {
+            // If no projects exist, going back means going to landing page
+            if (projects.length === 0) { navigate("/"); return }
+            setShowCreate(false)
+          }}
+          onGuestSubmit={isGuest ? (name, description) => {
+            const p = mkGuestProject(name, description)
+            setGuestProjects((prev) => {
+              const updated = [p, ...prev]
+              saveGuestProjects(updated)
+              return updated
+            })
+            try {
+              const d = emptyProjectData()
+              localStorage.setItem("vn2-scenes", JSON.stringify(d.scenes))
+              localStorage.setItem("vn2-nbs", JSON.stringify(d.nodesByScene))
+              localStorage.setItem("vn2-chars", JSON.stringify(d.characters ?? []))
+              localStorage.setItem("vn2-vars", JSON.stringify(d.variables ?? []))
+              localStorage.removeItem("vn2-active-scene")
+            } catch { /* noop */ }
+            navigate("/editor")
+          } : undefined}
         />
       )}
 
@@ -495,6 +630,17 @@ export default function ProjectsPage({ loaderData }: Route.ComponentProps) {
           projectId={renaming.id}
           fetcher={fetcher}
           onCancel={() => setRenaming(null)}
+          onGuestSubmit={isGuest ? (name, description) => {
+            setGuestProjects((prev) => {
+              const updated = prev.map((p) =>
+                p.id === renaming.id
+                  ? { ...p, name, description, updatedAt: Math.floor(Date.now() / 1000) }
+                  : p
+              )
+              saveGuestProjects(updated)
+              return updated
+            })
+          } : undefined}
         />
       )}
 
@@ -598,14 +744,15 @@ export default function ProjectsPage({ loaderData }: Route.ComponentProps) {
           INKGRAPH
         </button>
         <div style={{ flex: 1 }} />
+
         <button
           type="button"
-          onClick={() => navigate("/account")}
+          onClick={() => navigate(isGuest ? "/login" : "/account")}
           style={{
-            background: "linear-gradient(135deg,#6366f1,#a855f7)",
-            border: "none",
+            background: isGuest ? "transparent" : "linear-gradient(135deg,#6366f1,#a855f7)",
+            border: isGuest ? "1px solid #2a2a2a" : "none",
             borderRadius: 6,
-            color: "#fff",
+            color: isGuest ? "#888" : "#fff",
             fontSize: 11,
             fontWeight: 700,
             padding: "5px 12px",
@@ -614,9 +761,34 @@ export default function ProjectsPage({ loaderData }: Route.ComponentProps) {
             letterSpacing: 0.3,
           }}
         >
-          {initials}
+          {isGuest ? "Sign in" : initials}
         </button>
       </nav>
+
+      {/* Top loading bar */}
+      <div style={{ height: 2, background: C.border, position: "relative", overflow: "hidden" }}>
+        {fetcher.state !== "idle" && (
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              height: "100%",
+              width: "40%",
+              background: C.accent,
+              borderRadius: 2,
+              animation: "loadbar 1s ease-in-out infinite",
+            }}
+          />
+        )}
+      </div>
+      <style>{`
+        @keyframes loadbar {
+          0% { left: -40%; width: 40%; }
+          50% { left: 30%; width: 50%; }
+          100% { left: 110%; width: 40%; }
+        }
+      `}</style>
 
       {/* Content */}
       <main style={{ maxWidth: 900, margin: "0 auto", padding: "48px clamp(20px,4vw,64px)" }}>
@@ -649,27 +821,50 @@ export default function ProjectsPage({ loaderData }: Route.ComponentProps) {
                 : `${projects.length} project${projects.length !== 1 ? "s" : ""}`}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowCreate(true)}
-            style={{
-              background: C.accent,
-              border: "none",
-              borderRadius: 7,
-              color: "#fff",
-              fontSize: 13,
-              fontWeight: 600,
-              padding: "10px 20px",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-            }}
-          >
-            <span style={{ fontSize: 18, lineHeight: 1 }}>+</span>
-            New project
-          </button>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => navigate("/simulator")}
+              style={{
+                background: "transparent",
+                border: `1px solid ${C.border2}`,
+                borderRadius: 7,
+                color: C.dim,
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "10px 18px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+              }}
+            >
+              <span>🎭</span>
+              Simulate
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCreate(true)}
+              style={{
+                background: C.accent,
+                border: "none",
+                borderRadius: 7,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "10px 20px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+              }}
+            >
+              <span style={{ fontSize: 18, lineHeight: 1 }}>+</span>
+              New project
+            </button>
+          </div>
         </div>
 
         {/* Empty state */}

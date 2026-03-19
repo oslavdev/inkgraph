@@ -74,7 +74,7 @@ export default function HomeRoute() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   function onEnter() {
-    navigate("/editor")
+    navigate("/projects")
   }
 
   useEffect(() => {
@@ -976,6 +976,163 @@ export default function HomeRoute() {
           <p style={{ fontSize: 11, color: "#2a2a2a", marginTop: 20, fontFamily: "monospace" }}>
             Desktop app coming soon — use the browser version in the meantime.
           </p>
+        </div>
+      </section>
+
+      {/* ── Simulator ── */}
+      <section
+        style={{
+          paddingInline: "clamp(20px,5vw,80px)",
+          paddingBlock: "100px",
+          borderTop: "1px solid #141414",
+        }}
+      >
+        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: 48,
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontFamily: "monospace",
+                  color: ACCENT,
+                  letterSpacing: 2,
+                  marginBottom: 12,
+                }}
+              >
+                SIMULATOR
+              </div>
+              <h2
+                style={{
+                  fontSize: "clamp(24px,4vw,38px)",
+                  fontWeight: 700,
+                  margin: "0 0 16px",
+                  letterSpacing: "-1px",
+                  color: "#e5e5e5",
+                }}
+              >
+                Play it before you ship it
+              </h2>
+              <p style={{ fontSize: 14, color: "#555", lineHeight: 1.8, margin: "0 0 12px" }}>
+                The built-in simulator lets you walk through any scene exactly as a player would —
+                revealing text line by line, choosing responses, and branching through your tree
+                in real time.
+              </p>
+              <p style={{ fontSize: 14, color: "#555", lineHeight: 1.8, margin: "0 0 28px" }}>
+                At the end of the scene, you get a full summary of every choice made and the
+                complete dialogue log — perfect for spotting dead ends or missing branches before
+                handing off to your engine.
+              </p>
+              <button
+                type="button"
+                onClick={onEnter}
+                style={{
+                  background: "transparent",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: 8,
+                  color: "#888",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  padding: "12px 24px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span>🎭</span> Try the simulator
+              </button>
+            </div>
+
+            {/* Mock dialogue window */}
+            <div
+              style={{
+                background: "#0d0d0d",
+                border: "1px solid #1e1e1e",
+                borderRadius: 12,
+                overflow: "hidden",
+                fontFamily: "'Inter',system-ui,sans-serif",
+              }}
+            >
+              <div
+                style={{
+                  height: 36,
+                  background: "#0f0f0f",
+                  borderBottom: "1px solid #1e1e1e",
+                  display: "flex",
+                  alignItems: "center",
+                  paddingInline: 14,
+                  gap: 8,
+                }}
+              >
+                <span style={{ fontSize: 10, fontFamily: "monospace", color: ACCENT, letterSpacing: 1 }}>SIMULATOR</span>
+                <span style={{ fontSize: 10, color: "#333", fontFamily: "monospace", marginLeft: "auto" }}>Scene 1</span>
+              </div>
+              <div style={{ padding: "20px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* Past line */}
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", opacity: 0.4 }}>
+                  <svg width="32" height="32" viewBox="0 0 80 80" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+                    <circle cx="40" cy="22" r="13" fill="#6366f1" opacity="0.7" />
+                    <path d="M14 72c0-14.36 11.64-26 26-26h0c14.36 0 26 11.64 26 26" fill="#6366f1" opacity="0.7" />
+                  </svg>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#6366f1", fontFamily: "monospace", marginBottom: 4 }}>LYRA</div>
+                    <div style={{ fontSize: 12, color: "#555", background: "#111", borderRadius: "3px 8px 8px 8px", padding: "8px 12px" }}>
+                      What brings you to the Ashwood?
+                    </div>
+                  </div>
+                </div>
+                {/* Current line */}
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                  <svg width="40" height="40" viewBox="0 0 80 80" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+                    <circle cx="40" cy="22" r="13" fill="#ec4899" opacity="0.7" />
+                    <path d="M14 72c0-14.36 11.64-26 26-26h0c14.36 0 26 11.64 26 26" fill="#ec4899" opacity="0.7" />
+                  </svg>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#ec4899", fontFamily: "monospace", marginBottom: 4 }}>WARDEN</div>
+                    <div style={{ fontSize: 13, color: "#ccc", background: "#111", border: "1px solid #1e1e1e", borderRadius: "3px 10px 10px 10px", padding: "10px 14px", lineHeight: 1.6 }}>
+                      I&apos;m looking for someone. A traveller, passed through last week.
+                      <span style={{ display: "inline-block", width: 2, height: "1em", background: ACCENT, marginLeft: 3, verticalAlign: "middle", opacity: 0.8 }} />
+                    </div>
+                  </div>
+                </div>
+                {/* Choices */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                  {[
+                    "Tell me more about this traveller",
+                    "I haven't seen anyone like that",
+                  ].map((label, i) => (
+                    <div
+                      key={label}
+                      style={{
+                        background: i === 0 ? "#0d0d1a" : "#0a0a0a",
+                        border: `1px solid ${i === 0 ? "#3a3a7a" : "#1e1e1e"}`,
+                        borderRadius: 7,
+                        padding: "9px 12px",
+                        fontSize: 12,
+                        color: i === 0 ? "#aaa" : "#444",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <span style={{ width: 18, height: 18, borderRadius: 3, background: "#1a1a3a", border: "1px solid #3a3a7a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontFamily: "monospace", color: ACCENT, flexShrink: 0 }}>
+                        {i + 1}
+                      </span>
+                      {label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

@@ -3,7 +3,6 @@ import { redirect, useFetcher, useNavigate } from "react-router"
 import { auth } from "../server/auth.server"
 import { ToastContainer, useToast } from "../components/Toast"
 import { requireUser } from "../server/session.server"
-import type { Route } from "./+types/account"
 
 const C = {
   bg: "#0a0a0a",
@@ -17,12 +16,12 @@ const C = {
   success: "#22c55e",
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request }: { request: Request }) {
   const user = await requireUser(request)
   return { user }
 }
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ request }: { request: Request }) {
   const user = await requireUser(request)
   const form = await request.formData()
   const intent = form.get("intent") as string
@@ -187,7 +186,7 @@ function BackBtn({ onBack }: { onBack: () => void }) {
   )
 }
 
-export default function AccountPage({ loaderData }: Route.ComponentProps) {
+export default function AccountPage({ loaderData }: { loaderData: ReturnType<Awaited<ReturnType<typeof loader>>> extends Promise<infer T> ? T : ReturnType<typeof loader> }) {
   const { user } = loaderData
   const navigate = useNavigate()
   const fetcher = useFetcher<typeof action>()

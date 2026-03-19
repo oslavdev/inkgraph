@@ -90,6 +90,9 @@ function useTree(initialData = null) {
     if (initialData?.scenes?.length) return initialData.scenes[0].id
     return restore("vn2-active-scene", null) || restore("vn2-scenes", null)?.[0]?.id || null
   })
+  // Always-current ref so functional updaters inside setNodesByScene can read it without stale closure
+  const activeSceneIdRef = useRef(null)
+  activeSceneIdRef.current = activeSceneId
   const [nodesByScene, setNodesByScene] = useState(() => {
     if (initialData?.nodesByScene && Object.keys(initialData.nodesByScene).length) return initialData.nodesByScene
     const nb = restore("vn2-nbs", null)
@@ -107,6 +110,20 @@ function useTree(initialData = null) {
     return restore("vn2-vars", [])
   })
   const [sel, setSel] = useState(null)
+  const [history, setHistory] = useState([]) // stack of {nodesByScene} snapshots
+
+  const pushHistory = (snap) =>
+    setHistory((h) => [...h.slice(-49), snap]) // keep last 50
+
+  const undo = () => {
+    setHistory((h) => {
+      if (!h.length) return h
+      const prev = h[h.length - 1]
+      setNodesByScene(prev)
+      setSel(null)
+      return h.slice(0, -1)
+    })
+  }
 
   useEffect(() => persist("vn2-scenes", scenes), [scenes])
   useEffect(() => persist("vn2-active-scene", activeSceneId), [activeSceneId])
@@ -123,8 +140,9 @@ function useTree(initialData = null) {
     if (!sel && rootId) setSel(rootId)
   }, [sel, rootId])
 
-  const setNodes = (fn) =>
+  const setNodes = (fn, skipHistory = false) =>
     setNodesByScene((nb) => {
+      if (!skipHistory) pushHistory(nb)
       const cur = nb[activeSceneId] || { root: null, nodes: {} }
       const nxt = typeof fn === "function" ? fn(cur.nodes) : fn
       return { ...nb, [activeSceneId]: { ...cur, nodes: nxt } }
@@ -181,7 +199,10 @@ function useTree(initialData = null) {
   const addNode = (fromId, choiceId = null, ox = 0) => {
     const from = nodes[fromId]
     const nid = uid()
-    const nn = mkNode(nid, from.x + ox, from.y + NODE_H + 70)
+    // Smart placement: if node has choices, offset horizontally
+    const hasChoices = from.choices && from.choices.length > 0
+    const effectiveOx = ox !== 0 ? ox : (hasChoices ? (from.choices.length - 1) * 120 - (from.choices.length - 1) * 60 : 0)
+    const nn = mkNode(nid, from.x + effectiveOx, from.y + NODE_H + 70)
     setNodes((n) => {
       const nx = { ...n, [nid]: nn }
       if (choiceId) {
@@ -196,6 +217,58 @@ function useTree(initialData = null) {
     })
     setSel(nid)
     return nid
+  }
+
+  // Smart N key: read fresh state to avoid stale-closure issues after addChoice
+  const addNodeSmart = (fromId) => {
+    setNodesByScene((nb) => {
+      // Use ref to get current activeSceneId — avoids stale closure
+      const sceneId = activeSceneIdRef.current
+      const cur = nb[sceneId] || { root: null, nodes: {} }
+      const freshNodes = cur.nodes
+      const from = freshNodes[fromId]
+      if (!from) return nb // no-op
+
+      const nid = uid()
+
+      // Find first unlinked choice
+      const emptyChoice = from.choices?.find((c) => !c.nextId) ?? null
+
+      let ox = 0
+      let updatedFrom
+
+      if (emptyChoice) {
+        // Link the new node to the first empty choice
+        const i = from.choices.indexOf(emptyChoice)
+        const total = from.choices.length
+        ox = (i - (total - 1) / 2) * 150
+        updatedFrom = {
+          ...from,
+          choices: from.choices.map((c) =>
+            c.id === emptyChoice.id ? { ...c, nextId: nid } : c
+          ),
+        }
+      } else if (!from.choices || from.choices.length === 0) {
+        // No choices at all — normal nextId link
+        updatedFrom = { ...from, nextId: nid }
+      } else {
+        // All choices already linked — add a new choice and link it
+        const newChoice = mkChoice("Option " + (from.choices.length + 1))
+        newChoice.nextId = nid
+        const total = from.choices.length + 1
+        const i = from.choices.length
+        ox = (i - (total - 1) / 2) * 150
+        updatedFrom = { ...from, choices: [...from.choices, newChoice] }
+      }
+
+      const nn = mkNode(nid, from.x + ox, from.y + NODE_H + 70)
+      const nextNodes = { ...freshNodes, [fromId]: updatedFrom, [nid]: nn }
+
+      // Select the new node after state settles
+      setTimeout(() => setSel(nid), 0)
+
+      return { ...nb, [sceneId]: { ...cur, nodes: nextNodes } }
+    })
   }
   const addChoice = (id) => {
     const c = mkChoice("Option " + (nodes[id].choices.length + 1))
@@ -287,6 +360,7 @@ function useTree(initialData = null) {
     setSel,
     upd,
     addNode,
+    addNodeSmart,
     addChoice,
     remChoice,
     updChoice,
@@ -310,6 +384,8 @@ function useTree(initialData = null) {
     deleteVar,
     exportAll,
     importAll,
+    undo,
+    nodesByScene,
   }
 }
 
@@ -519,6 +595,17 @@ function Canvas({ tree, viewRef }) {
     lastM.current = null
     if (conn) setConn(null)
   }
+
+  // Release pan/drag if mouse leaves window (prevents sticky pan)
+  useEffect(() => {
+    function onWindowUp() {
+      setDragN(null)
+      setPanning(false)
+      lastM.current = null
+    }
+    window.addEventListener("mouseup", onWindowUp)
+    return () => window.removeEventListener("mouseup", onWindowUp)
+  }, [])
   const onInUp = (e, toId) => {
     e.stopPropagation()
     if (conn && conn.fromId !== toId) linkNodes(conn.fromId, toId, conn.choiceId || null)
@@ -2045,8 +2132,9 @@ const GUIDE_SECTIONS = [
         type: "table",
         rows: [
           ["Key", "Action"],
-          ["N", "New node from selected"],
+          ["N", "New node (links to first empty choice, or nextId)"],
           ["C", "Add choice to selected node"],
+          ["Z", "Undo last change"],
           ["Delete", "Delete selected node"],
           ["← → ↑ ↓", "Nudge selected node on canvas"],
           ["Tab", "Cycle selection through all nodes"],
@@ -2057,6 +2145,31 @@ const GUIDE_SECTIONS = [
       {
         type: "callout",
         text: "Shortcuts are disabled while focus is inside a text field or dropdown.",
+      },
+    ],
+  },
+  {
+    title: "Dialogue Simulator",
+    content: [
+      {
+        type: "para",
+        text: "The simulator lets you play through any scene exactly as a player would experience it — before you export to your game engine.",
+      },
+      {
+        type: "steps",
+        items: [
+          "Open the simulator from the Projects page (🎭 Simulate button) or from the editor topbar.",
+          "Pick a project and a scene from the dropdowns, then click Start simulation.",
+          "Text reveals line by line. Click the text at any time to skip the typewriter animation.",
+          "When a node has choices, numbered option buttons appear. Click one to branch.",
+          "Linear nodes show a Next → button. Terminal nodes (no next, no choices) end the scene.",
+          "At the end you see: every choice you made, who was speaking, and the full dialogue log.",
+          "Use Replay scene to run through again, or Choose different scene to try another branch.",
+        ],
+      },
+      {
+        type: "callout",
+        text: "Tip: the simulator reads directly from your saved project data. Always save before simulating to see your latest changes.",
       },
     ],
   },
@@ -2945,10 +3058,11 @@ const PANELS = [
 ]
 
 const HOTKEYS = [
-  ["N", "New node"],
-  ["C", "Add choice"],
-  ["Del", "Delete node"],
-  ["← → ↑ ↓", "Move node"],
+  ["N", "New node (smart: fills empty choice first)"],
+  ["C", "Add choice to node"],
+  ["Z", "Undo last change"],
+  ["Del", "Delete selected node"],
+  ["← → ↑ ↓", "Nudge node"],
   ["Tab", "Cycle nodes"],
   ["?", "Help"],
 ]
