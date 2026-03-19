@@ -127,7 +127,14 @@ export interface TreeState {
   importAll: (json: string) => void
 }
 
-export declare function useTree(): TreeState
+interface InitialData {
+  scenes?: Array<{ id: string; name: string; description: string }>
+  nodesByScene?: Record<string, SceneData>
+  characters?: Character[]
+  variables?: Variable[]
+}
+
+export declare function useTree(initialData?: InitialData | null): TreeState
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 

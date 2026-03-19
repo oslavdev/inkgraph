@@ -77,24 +77,35 @@ const restore = (k, fb) => {
 }
 
 // ─── useTree ──────────────────────────────────────────────────────────────────
-function useTree() {
+function useTree(initialData = null) {
   const initScenes = () => {
     const id = uid()
     return [{ id, name: "Scene 1", description: "" }]
   }
-  const [scenes, setScenes] = useState(() => restore("vn2-scenes", null) || initScenes())
-  const [activeSceneId, setActiveSceneId] = useState(
-    () => restore("vn2-active-scene", null) || restore("vn2-scenes", null)?.[0]?.id || null
-  )
+  const [scenes, setScenes] = useState(() => {
+    if (initialData?.scenes?.length) return initialData.scenes
+    return restore("vn2-scenes", null) || initScenes()
+  })
+  const [activeSceneId, setActiveSceneId] = useState(() => {
+    if (initialData?.scenes?.length) return initialData.scenes[0].id
+    return restore("vn2-active-scene", null) || restore("vn2-scenes", null)?.[0]?.id || null
+  })
   const [nodesByScene, setNodesByScene] = useState(() => {
+    if (initialData?.nodesByScene && Object.keys(initialData.nodesByScene).length) return initialData.nodesByScene
     const nb = restore("vn2-nbs", null)
     if (nb) return nb
     const sid = restore("vn2-scenes", null)?.[0]?.id || uid()
     const nid = uid()
     return { [sid]: { root: nid, nodes: { [nid]: mkNode(nid) } } }
   })
-  const [characters, setCharacters] = useState(() => restore("vn2-chars", []))
-  const [variables, setVariables] = useState(() => restore("vn2-vars", []))
+  const [characters, setCharacters] = useState(() => {
+    if (initialData?.characters) return initialData.characters
+    return restore("vn2-chars", [])
+  })
+  const [variables, setVariables] = useState(() => {
+    if (initialData?.variables) return initialData.variables
+    return restore("vn2-vars", [])
+  })
   const [sel, setSel] = useState(null)
 
   useEffect(() => persist("vn2-scenes", scenes), [scenes])
@@ -106,6 +117,11 @@ function useTree() {
   const sd = nodesByScene[activeSceneId] || { root: null, nodes: {} }
   const nodes = sd.nodes || {}
   const rootId = sd.root
+
+  // Auto-select the root node when nothing is selected (initial load or scene switch)
+  useEffect(() => {
+    if (!sel && rootId) setSel(rootId)
+  }, [sel, rootId])
 
   const setNodes = (fn) =>
     setNodesByScene((nb) => {

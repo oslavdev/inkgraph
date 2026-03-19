@@ -6,8 +6,8 @@ const FROM = process.env.EMAIL_FROM ?? "Inkgraph <noreply@yourdomain.com>"
 const APP_URL = process.env.APP_URL ?? "http://localhost:5173"
 
 // ─── Password reset ───────────────────────────────────────────────────────────
-export async function sendPasswordResetEmail(to: string, token: string) {
-  const url = `${APP_URL}/reset-password?token=${token}`
+export async function sendPasswordResetEmail(to: string, resetUrl: string) {
+  const url = resetUrl
 
   await resend.emails.send({
     from: FROM,

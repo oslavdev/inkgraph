@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router"
+import { ToastContainer, useToast } from "../components/Toast"
 import {
   C,
   Canvas,
@@ -16,20 +17,26 @@ import {
   useTree,
 } from "../components/editor-core"
 import {
-  createProject,
-  emptyProjectData,
   getLastOpenedProject,
   getProject,
   saveProject,
   touchProject,
 } from "../server/projects.server"
-import { requireUser } from "../server/session.server"
+import { getSession } from "../server/session.server"
 import type { Route } from "./+types/editor"
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const user = await requireUser(request)
+  const session = await getSession(request)
+
+  // Guest mode — no session, no projectId
+  if (!session) {
+    if (params.projectId) throw redirect("/editor")
+    return { user: null, project: null }
+  }
+
+  const user = session.user
 
   // /editor/:projectId — load specific project
   if (params.projectId) {
@@ -39,24 +46,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return { user, project }
   }
 
-  // /editor — load last opened or create new
+  // /editor — load last opened, or send to projects to create one
   const last = await getLastOpenedProject(user.id)
   if (last) {
     throw redirect(`/editor/${last.id}`)
   }
-  const fresh = await createProject(user.id, "My first project", "", emptyProjectData())
-  throw redirect(`/editor/${fresh.id}`)
+  throw redirect('/projects')
 }
 
 // ─── Action — auto-save ───────────────────────────────────────────────────────
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const user = await requireUser(request)
+  const session = await getSession(request)
+  if (!session) return { ok: false, error: "Not authenticated" }
+  const user = session.user
   const form = await request.formData()
   const intent = form.get("intent") as string
 
   if (intent === "autosave") {
-    const id = params.projectId as string
+    const id = params.projectId
+    if (!id) return { ok: false, error: "No project ID" }
     const name = (form.get("name") as string) || "Untitled"
     const description = (form.get("description") as string) || ""
     const data = JSON.parse(form.get("data") as string)
@@ -245,7 +254,7 @@ export default function EditorRoute() {
 
   // Seed localStorage keyed by project.id — re-seeds whenever project changes
   const seededRef = useRef("")
-  if (seededRef.current !== project.id && typeof window !== "undefined") {
+  if (project && seededRef.current !== project.id && typeof window !== "undefined") {
     seededRef.current = project.id
     try {
       const d = JSON.parse(project.data) as {
@@ -266,10 +275,13 @@ export default function EditorRoute() {
   }
 
   // tree must be declared before any hook that references it
-  const tree = useTree()
+  const initialData = (() => {
+    try { return project ? JSON.parse(project.data) : null } catch { return null }
+  })()
+  const tree = useTree(initialData)
   const { nodes, sel, setSel, addNode, addChoice, delNode, movNode, rootId } = tree
 
-  const [projectName, setProjectName] = useState(project.name)
+  const [projectName, setProjectName] = useState(project?.name ?? "")
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
   const [showHelp, setShowHelp] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
@@ -301,6 +313,7 @@ export default function EditorRoute() {
       characters: tree.characters,
       variables: tree.variables,
     }
+    if (!project) return // guest mode — no server project to save
     const form = new FormData()
     form.set("intent", "autosave")
     form.set("name", projectName)
@@ -321,13 +334,17 @@ export default function EditorRoute() {
       doSaveRef.current()
     }, 30_000)
     return () => clearInterval(interval)
-  }, [project.id])
+  }, [project?.id ?? null])
 
-  // When save returns a new id, store it
+  // Handle save results
   useEffect(() => {
-    if (fetcher.data && "ok" in fetcher.data && fetcher.data.ok) {
+    if (!fetcher.data) return
+    if ("ok" in fetcher.data && fetcher.data.ok) {
       setSaveStatus("saved")
       setTimeout(() => setSaveStatus("idle"), 2000)
+    } else if ("error" in fetcher.data && fetcher.data.error) {
+      setSaveStatus("idle")
+      showToast(`Could not save: ${fetcher.data.error}`, "error")
     }
   }, [fetcher.data])
 
@@ -433,15 +450,99 @@ export default function EditorRoute() {
     return null
   }
 
-  const initials = (user.name || user.email).slice(0, 2).toUpperCase()
+  const initials = user ? (user.name || user.email).slice(0, 2).toUpperCase() : "??"
 
   // Ko-fi nudge after first 2 nodes created
   const nodeCount = Object.keys(nodes).length
   const [kofiNudgeDismissed, setKofiNudgeDismissed] = useState(false)
   const showKofiNudge = nodeCount >= 2 && !kofiNudgeDismissed
 
-  // User is logged in — no need for the localStorage/auth notice
-  const notice = null
+  const { toasts, show: showToast, dismiss: dismissToast } = useToast()
+
+  const [guestDismissed, setGuestDismissed] = useState(false)
+  const isGuest = !user
+
+  const guestNotice = isGuest && !guestDismissed ? (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 400,
+        background: "rgba(0,0,0,0.75)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          width: "min(440px, 92vw)",
+          background: "#0f0f0f",
+          border: "1px solid #2a2a2a",
+          borderRadius: 12,
+          overflow: "hidden",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.9)",
+        }}
+      >
+        <div style={{ height: 3, background: "linear-gradient(90deg,#6366f1,#a855f7)" }} />
+        <div style={{ padding: "28px 28px 24px" }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: "#e5e5e5", marginBottom: 8 }}>
+            Welcome to Inkgraph
+          </div>
+          <p style={{ fontSize: 14, color: "#666", lineHeight: 1.75, marginBottom: 24 }}>
+            You&apos;re not signed in. You can still use the editor — your work will be saved in
+            your browser&apos;s local storage, but it won&apos;t sync across devices and will be
+            lost if you clear your browser data.
+          </p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => navigate("/login")}
+              style={{
+                flex: "1 1 160px",
+                background: "#6366f1",
+                border: "none",
+                borderRadius: 7,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "11px 16px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Sign in / Create account
+            </button>
+            <button
+              type="button"
+              onClick={() => setGuestDismissed(true)}
+              style={{
+                flex: "1 1 120px",
+                background: "transparent",
+                border: "1px solid #2a2a2a",
+                borderRadius: 7,
+                color: "#888",
+                fontSize: 13,
+                fontWeight: 500,
+                padding: "11px 16px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Continue as guest
+            </button>
+          </div>
+          <p style={{ fontSize: 11, color: "#333", fontFamily: "monospace", marginTop: 16, marginBottom: 0 }}>
+            Your work saves to localStorage. Sign in anytime to sync it to the cloud.
+          </p>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  const notice = guestNotice
 
   // ── Mobile ──────────────────────────────────────────────────────────────────
 
@@ -498,6 +599,7 @@ export default function EditorRoute() {
         }}
       >
         {notice}
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
         {showKofiNudge && <KofiNudge onDismiss={() => setKofiNudgeDismissed(true)} />}
 
@@ -824,6 +926,7 @@ export default function EditorRoute() {
       }}
     >
       {notice}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
       {showKofiNudge && <KofiNudge onDismiss={() => setKofiNudgeDismissed(true)} />}
 
@@ -912,7 +1015,7 @@ export default function EditorRoute() {
             letterSpacing: 0.3,
           }}
         >
-          {user.name.split(" ")[0]}
+          {user ? user.name.split(" ")[0] : "Guest"}
         </button>
       </div>
 

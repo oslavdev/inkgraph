@@ -1,7 +1,8 @@
 import { useState } from "react"
-import { redirect, useNavigate, useSearchParams } from "react-router"
+import { redirect, useFetcher, useNavigate, useSearchParams } from "react-router"
+import { ToastContainer, useToast } from "../components/Toast"
+import { auth } from "../server/auth.server"
 import { getSession } from "../server/session.server"
-import type { Route } from "./+types/login"
 
 const C = {
   bg: "#0a0a0a",
@@ -15,10 +16,39 @@ const C = {
   success: "#22c55e",
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request }: { request: Request }) {
   const session = await getSession(request)
   if (session) throw redirect("/editor")
   return null
+}
+
+export async function action({ request }: { request: Request }) {
+  const form = await request.formData()
+  const intent = form.get("intent") as string
+
+  if (intent === "forget-password") {
+    const email = form.get("email") as string
+    const redirectTo = form.get("redirectTo") as string
+    try {
+      const req = new Request(new URL("/api/auth/forget-password", request.url), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, redirectTo }),
+      })
+      const res = await auth.handler(req)
+      if (!res.ok) {
+        let msg = "Failed to send reset email."
+        try { const d = await res.clone().json(); msg = d.message ?? msg } catch { /* empty */ }
+        return { ok: false, error: msg }
+      }
+      return { ok: true }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to send reset email."
+      return { ok: false, error: msg }
+    }
+  }
+
+  return { ok: false, error: "Unknown intent" }
 }
 
 type View = "login" | "register" | "forgot" | "forgot-sent"
@@ -163,6 +193,8 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const redirectTo = searchParams.get("redirect") ?? "/editor"
+  const { toasts, show: showToast, dismiss: dismissToast } = useToast()
+  const forgotFetcher = useFetcher<typeof action>()
 
   const [view, setView] = useState<View>("login")
   const [error, setError] = useState("")
@@ -230,26 +262,16 @@ export default function LoginPage() {
     }
   }
 
-  async function doForgot() {
+  function doForgot() {
     if (!forgotEmail.trim()) return setError("Enter your email address.")
-    setLoading(true)
-    reset()
-    try {
-      await fetch("/api/auth/forget-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: forgotEmail.trim(),
-          redirectTo: `${window.location.origin}/reset-password`,
-        }),
-      })
-      setView("forgot-sent")
-    } catch {
-      setView("forgot-sent")
-    } finally {
-      setLoading(false)
-    }
+    const form = new FormData()
+    form.set("intent", "forget-password")
+    form.set("email", forgotEmail.trim())
+    form.set("redirectTo", `${window.location.origin}/reset-password`)
+    forgotFetcher.submit(form, { method: "post" })
   }
+
+
 
   return (
     <div
@@ -343,7 +365,7 @@ export default function LoginPage() {
           </div>
 
           {view === "login" && (
-            <>
+            <form onSubmit={(e) => { e.preventDefault(); doLogin() }} noValidate>
               <h1 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 700, color: C.text }}>
                 Sign in
               </h1>
@@ -384,11 +406,11 @@ export default function LoginPage() {
                 </span>
                 <NavLink onClick={() => go("forgot")}>Forgot password?</NavLink>
               </div>
-            </>
+            </form>
           )}
 
           {view === "register" && (
-            <>
+            <form onSubmit={(e) => { e.preventDefault(); doRegister() }} noValidate>
               <h1 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 700, color: C.text }}>
                 Create account
               </h1>
@@ -437,35 +459,44 @@ export default function LoginPage() {
               <div style={{ marginTop: 18, fontSize: 13, color: C.muted, textAlign: "center" }}>
                 Already have one? <NavLink onClick={() => go("login")}>Sign in</NavLink>
               </div>
-            </>
+            </form>
           )}
 
-          {view === "forgot" && (
-            <>
-              <h1 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 700, color: C.text }}>
-                Reset password
-              </h1>
-              <p style={{ margin: "0 0 24px", fontSize: 13, color: C.muted }}>
-                We&apos;ll send a reset link to your inbox.
-              </p>
-              <Field
-                id="forgot-email"
-                label="EMAIL"
-                type="email"
-                value={forgotEmail}
-                onChange={setForgotEmail}
-                placeholder="you@example.com"
-                autoComplete="email"
-              />
-              <ErrBox msg={error} />
-              <PrimaryBtn onClick={doForgot} loading={loading}>
-                Send reset link
-              </PrimaryBtn>
-              <div style={{ marginTop: 18, fontSize: 13, color: C.muted, textAlign: "center" }}>
-                <NavLink onClick={() => go("login")}>← Back to sign in</NavLink>
-              </div>
-            </>
-          )}
+          {view === "forgot" && (() => {
+            const fd = forgotFetcher.data
+            if (fd && fd.ok) {
+              // Success — switch to sent view on next render
+              setTimeout(() => setView("forgot-sent"), 0)
+            }
+            const forgotError = error || (fd && !fd.ok && "error" in fd ? fd.error ?? "" : "")
+            const forgotLoading = forgotFetcher.state !== "idle"
+            return (
+              <form onSubmit={(e) => { e.preventDefault(); doForgot() }} noValidate>
+                <h1 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 700, color: C.text }}>
+                  Reset password
+                </h1>
+                <p style={{ margin: "0 0 24px", fontSize: 13, color: C.muted }}>
+                  We&apos;ll send a reset link to your inbox.
+                </p>
+                <Field
+                  id="forgot-email"
+                  label="EMAIL"
+                  type="email"
+                  value={forgotEmail}
+                  onChange={setForgotEmail}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                />
+                <ErrBox msg={forgotError} />
+                <PrimaryBtn onClick={doForgot} loading={forgotLoading}>
+                  Send reset link
+                </PrimaryBtn>
+                <div style={{ marginTop: 18, fontSize: 13, color: C.muted, textAlign: "center" }}>
+                  <NavLink onClick={() => go("login")}>← Back to sign in</NavLink>
+                </div>
+              </form>
+            )
+          })()}
 
           {view === "forgot-sent" && (
             <>
@@ -487,6 +518,7 @@ export default function LoginPage() {
           )}
         </div>
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }
