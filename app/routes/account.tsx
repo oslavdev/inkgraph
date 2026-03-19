@@ -1,5 +1,7 @@
 import { useState } from "react"
-import { useNavigate } from "react-router"
+import { redirect, useFetcher, useNavigate } from "react-router"
+import { auth } from "../server/auth.server"
+import { ToastContainer, useToast } from "../components/Toast"
 import { requireUser } from "../server/session.server"
 import type { Route } from "./+types/account"
 
@@ -18,6 +20,56 @@ const C = {
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await requireUser(request)
   return { user }
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const user = await requireUser(request)
+  const form = await request.formData()
+  const intent = form.get("intent") as string
+
+  if (intent === "sign-out") {
+    // Proxy to better-auth sign-out endpoint, then hard-redirect to clear state
+    const signOutReq = new Request(new URL("/api/auth/sign-out", request.url), {
+      method: "POST",
+      headers: request.headers,
+    })
+    await auth.handler(signOutReq)
+    throw redirect("/", {
+      headers: {
+        "Set-Cookie": "better-auth.session_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax",
+      },
+    })
+  }
+
+  if (intent === "delete-account") {
+    const password = form.get("password") as string
+    if (!password) return { ok: false, error: "Password is required." }
+
+    // Verify password via better-auth sign-in
+    const verifyReq = new Request(new URL("/api/auth/sign-in/email", request.url), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, password }),
+    })
+    const verifyRes = await auth.handler(verifyReq)
+    if (!verifyRes.ok) return { ok: false, error: "Incorrect password." }
+
+    // Delete the user account via better-auth (projects cascade-delete via FK)
+    const deleteReq = new Request(new URL("/api/auth/delete-user", request.url), {
+      method: "POST",
+      headers: request.headers,
+      body: JSON.stringify({ callbackURL: "/" }),
+    })
+    await auth.handler(deleteReq)
+
+    throw redirect("/", {
+      headers: {
+        "Set-Cookie": "better-auth.session_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax",
+      },
+    })
+  }
+
+  return { ok: false, error: "Unknown intent" }
 }
 
 type Section = "main" | "password" | "delete"
@@ -138,11 +190,14 @@ function BackBtn({ onBack }: { onBack: () => void }) {
 export default function AccountPage({ loaderData }: Route.ComponentProps) {
   const { user } = loaderData
   const navigate = useNavigate()
+  const fetcher = useFetcher<typeof action>()
+  const { toasts, show: showToast, dismiss: dismissToast } = useToast()
   const [section, setSection] = useState<Section>("main")
 
   const [curPw, setCurPw] = useState("")
   const [newPw, setNewPw] = useState("")
   const [newPw2, setNewPw2] = useState("")
+  const [delPw, setDelPw] = useState("")
   const [delConfirm, setDelConfirm] = useState("")
 
   const [error, setError] = useState("")
@@ -156,17 +211,10 @@ export default function AccountPage({ loaderData }: Route.ComponentProps) {
     setOk("")
   }
 
-  async function doSignOut() {
-    try {
-      await fetch("/api/auth/sign-out", {
-        method: "POST",
-        credentials: "include",
-      })
-    } finally {
-      // Hard redirect — clears any in-memory state and forces a full server round-trip
-      // so the loader on the landing page sees no session
-      window.location.href = "/"
-    }
+  function doSignOut() {
+    const form = new FormData()
+    form.set("intent", "sign-out")
+    fetcher.submit(form, { method: "post" })
   }
 
   async function doChangePw() {
@@ -181,7 +229,8 @@ export default function AccountPage({ loaderData }: Route.ComponentProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword: curPw, newPassword: newPw }),
       })
-      const data = await res.json()
+      let data: { message?: string } = {}
+      try { data = await res.json() } catch { /* empty */ }
       if (!res.ok) throw new Error(data.message ?? "Failed to change password.")
       setCurPw("")
       setNewPw("")
@@ -189,41 +238,29 @@ export default function AccountPage({ loaderData }: Route.ComponentProps) {
       setOk("Password updated successfully.")
       setTimeout(() => setSection("main"), 1500)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Something went wrong.")
+      const msg = e instanceof Error ? e.message : "Something went wrong."
+      // Network/unexpected errors go to toast; auth errors stay in the form
+      if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
+        showToast(msg, "error")
+      } else {
+        setError(msg)
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  async function doDelete() {
+  function doDelete() {
     if (delConfirm.trim().toLowerCase() !== "delete") return setError("Type DELETE to confirm.")
-    setLoading(true)
-    reset()
-    try {
-      const res = await fetch("/api/auth/delete-user", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ password: curPw || undefined }),
-      })
-      if (!res.ok) {
-        const text = await res.text()
-        let msg = "Failed to delete account."
-        try {
-          msg = (JSON.parse(text) as { message?: string }).message ?? msg
-        } catch {
-          /* empty body */
-        }
-        throw new Error(msg)
-      }
-      // Success — hard redirect to clear session state
-      window.location.href = "/"
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Something went wrong.")
-    } finally {
-      setLoading(false)
-    }
+    if (!delPw) return setError("Enter your password to confirm.")
+    const form = new FormData()
+    form.set("intent", "delete-account")
+    form.set("password", delPw)
+    fetcher.submit(form, { method: "post" })
   }
+
+  // Show server-side errors from fetcher
+  const fetcherError = fetcher.data && "error" in fetcher.data ? fetcher.data.error : ""
 
   return (
     <div
@@ -539,6 +576,8 @@ export default function AccountPage({ loaderData }: Route.ComponentProps) {
             <BackBtn
               onBack={() => {
                 setSection("main")
+                setDelPw("")
+                setDelConfirm("")
                 reset()
               }}
             />
@@ -568,6 +607,14 @@ export default function AccountPage({ loaderData }: Route.ComponentProps) {
                 deleted.
               </div>
             </div>
+            <Field
+              id="del-pw"
+              label="YOUR PASSWORD"
+              type="password"
+              value={delPw}
+              onChange={setDelPw}
+              placeholder="Enter your password"
+            />
             <div style={{ marginBottom: 16 }}>
               <label
                 htmlFor="del-confirm"
@@ -598,11 +645,11 @@ export default function AccountPage({ loaderData }: Route.ComponentProps) {
                 }}
               />
             </div>
-            <StatusBox msg={error} variant="error" />
+            <StatusBox msg={error || fetcherError} variant="error" />
             <button
               type="button"
               onClick={doDelete}
-              disabled={loading}
+              disabled={fetcher.state !== "idle"}
               style={{
                 width: "100%",
                 background: "#1a0a0a",
@@ -612,16 +659,17 @@ export default function AccountPage({ loaderData }: Route.ComponentProps) {
                 fontSize: 14,
                 fontWeight: 600,
                 padding: "12px",
-                cursor: loading ? "not-allowed" : "pointer",
+                cursor: fetcher.state !== "idle" ? "not-allowed" : "pointer",
                 fontFamily: "inherit",
-                opacity: loading ? 0.6 : 1,
+                opacity: fetcher.state !== "idle" ? 0.6 : 1,
               }}
             >
-              {loading ? "…" : "Permanently delete account"}
+              {fetcher.state !== "idle" ? "Deleting…" : "Permanently delete account"}
             </button>
           </>
         )}
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

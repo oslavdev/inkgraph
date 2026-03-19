@@ -1,5 +1,4 @@
 import { auth } from "../server/auth.server"
-import type { Route } from "./+types/api.auth.$"
 
 /**
  * better-auth handles all auth endpoints under /api/auth/*
@@ -9,12 +8,12 @@ import type { Route } from "./+types/api.auth.$"
  *      POST /api/auth/forget-password
  *      POST /api/auth/reset-password
  *      POST /api/auth/change-password
- *      DELETE /api/auth/delete-user
+ *      POST /api/auth/delete-user
  */
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request }: { request: Request }) {
   return auth.handler(request)
 }
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ request }: { request: Request }) {
   return auth.handler(request)
 }

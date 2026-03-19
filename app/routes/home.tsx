@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react"
 import type { ReactNode } from "react"
-import { useNavigate } from "react-router"
+import { redirect, useNavigate } from "react-router"
 import { NodePreview } from "../components/NodePreview"
+import { getSession } from "../server/session.server"
 
 // C is only used for accent colour in one place — inline it to avoid
 // importing from the JSX-only editor-core module into a TSX route
@@ -61,6 +62,12 @@ const BLOBS: Blob[] = [
   { x: 0.78, y: 0.52, r: 0.52, hue: 280, sat: 70, speed: 0.0003 },
   { x: 0.5, y: 0.82, r: 0.42, hue: 240, sat: 60, speed: 0.0006 },
 ]
+
+export async function loader({ request }: { request: Request }) {
+  const session = await getSession(request)
+  if (session) throw redirect("/editor")
+  return null
+}
 
 export default function HomeRoute() {
   const navigate = useNavigate()
