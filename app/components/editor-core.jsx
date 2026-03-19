@@ -173,6 +173,7 @@ function useTree(initialData = null) {
     })
     if (activeSceneId === id) setActiveSceneId(scenes.find((s) => s.id !== id)?.id)
   }
+  const reorderScenes = (newOrder) => setScenes(newOrder)
 
   // characters
   const addChar = () => {
@@ -374,6 +375,7 @@ function useTree(initialData = null) {
     addScene,
     updateScene,
     deleteScene,
+    reorderScenes,
     characters,
     addChar,
     updateChar,
@@ -543,7 +545,7 @@ function Minimap({ nodes, pan, viewW, viewH }) {
 }
 
 // ─── Canvas ───────────────────────────────────────────────────────────────────
-function Canvas({ tree, viewRef }) {
+function Canvas({ tree, viewRef, onJumpToRoot }) {
   const { nodes, rootId, sel, setSel, movNode, linkNodes, unlinkNode, characters } = tree
   const svgRef = useRef(null)
   const [pan, setPan] = useState({ x: 60, y: 60 })
@@ -647,6 +649,43 @@ function Canvas({ tree, viewRef }) {
 
   return (
     <div ref={viewRef} style={{ width: "100%", height: "100%", position: "relative" }}>
+      {/* Jump to root button */}
+      <button
+        type="button"
+        onClick={() => {
+          if (rootId && nodes[rootId]) {
+            const nd = nodes[rootId]
+            setPan({ x: -nd.x + 60, y: -nd.y + 60 })
+            setSel(rootId)
+          }
+          if (onJumpToRoot) onJumpToRoot()
+        }}
+        title="Jump to root node (Home)"
+        style={{
+          position: "absolute",
+          bottom: 12,
+          left: 12,
+          zIndex: 20,
+          background: "rgba(10,10,10,0.85)",
+          border: `1px solid ${C.border}`,
+          borderRadius: 5,
+          color: C.textMuted,
+          fontSize: 10,
+          fontFamily: "monospace",
+          padding: "4px 9px",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          backdropFilter: "blur(4px)",
+        }}
+      >
+        <svg width="10" height="10" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 12L12 3l9 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M9 21V12h6v9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        Root
+      </button>
       <svg
         ref={svgRef}
         style={{
@@ -1004,15 +1043,47 @@ const SmBtn = ({ onClick, children, color = C.accent }) => (
 
 // ─── Sidebar panels ───────────────────────────────────────────────────────────
 function ScenesPanel({ tree }) {
-  const { scenes, activeSceneId, switchScene, addScene, updateScene, deleteScene } = tree
+  const { scenes, activeSceneId, switchScene, addScene, updateScene, deleteScene, nodesByScene } = tree
   const [editing, setEditing] = useState(null)
   const [newName, setNewName] = useState("")
+  const [dragOver, setDragOver] = useState(null)
+  const [dragSrc, setDragSrc] = useState(null)
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (editing && inputRef.current) inputRef.current.focus()
+  }, [editing])
+
+  function reorderScenes(fromId, toId) {
+    if (fromId === toId) return
+    const from = scenes.findIndex((s) => s.id === fromId)
+    const to = scenes.findIndex((s) => s.id === toId)
+    const next = [...scenes]
+    const [item] = next.splice(from, 1)
+    next.splice(to, 0, item)
+    // updateScene doesn't reorder — we need a full scenes replace
+    // Use a workaround: delete all and re-add isn't safe, so expose via a hack
+    // Actually we update the tree's scenes array directly via setScenes if available
+    // For now, use the available updateScene in a loop isn't possible
+    // We'll do it via the exported reorderScenes if it exists, else skip
+    if (tree.reorderScenes) tree.reorderScenes(next)
+  }
+
   return (
     <>
       <div style={{ flex: 1, overflowY: "auto" }}>
-        {scenes.map((sc) => (
-          <div key={sc.id} style={{ borderBottom: "1px solid #141414" }}>
-
+        {scenes.map((sc) => {
+          const nodeCount = Object.keys(nodesByScene?.[sc.id]?.nodes ?? {}).length
+          return (
+          <div
+            key={sc.id}
+            style={{ borderBottom: "1px solid #141414", opacity: dragOver === sc.id ? 0.5 : 1 }}
+            draggable
+            onDragStart={() => setDragSrc(sc.id)}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(sc.id) }}
+            onDragLeave={() => setDragOver(null)}
+            onDrop={() => { reorderScenes(dragSrc, sc.id); setDragOver(null); setDragSrc(null) }}
+          >
             <div
               style={{
                 display: "flex",
@@ -1040,15 +1111,16 @@ function ScenesPanel({ tree }) {
                   borderRadius: "50%",
                   background: sc.id === activeSceneId ? C.accent : "#2a2a2a",
                   flexShrink: 0,
+                  cursor: "grab",
                 }}
               />
               {editing === sc.id ? (
                 <input
-             
+                  ref={inputRef}
                   value={sc.name}
                   onChange={(e) => updateScene(sc.id, { name: e.target.value })}
                   onBlur={() => setEditing(null)}
-                  onKeyDown={(e) => e.key === "Enter" && setEditing(null)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(null) } }}
                   style={{
                     background: "transparent",
                     border: "none",
@@ -1071,6 +1143,9 @@ function ScenesPanel({ tree }) {
                   {sc.name}
                 </span>
               )}
+              <span style={{ fontSize: 9, color: "#333", fontFamily: "monospace", flexShrink: 0 }}>
+                {nodeCount}
+              </span>
               {scenes.length > 1 && (
                 <IBtn
                   style={{ fontSize: 13, color: "#333" }}
@@ -1107,7 +1182,8 @@ function ScenesPanel({ tree }) {
               </div>
             )}
           </div>
-        ))}
+        )})
+        }
       </div>
       <div
         style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 6 }}
@@ -1667,6 +1743,7 @@ function NodePanel({ node, tree }) {
         Select a node
       </div>
     )
+  const [choicesCollapsed, setChoicesCollapsed] = useState(false)
   const { upd, addNode, addChoice, remChoice, updChoice, delNode, rootId, characters, variables } =
     tree
 
@@ -1930,7 +2007,16 @@ function NodePanel({ node, tree }) {
       {/* Choices */}
       <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
         <Sec
-          label="CHOICES"
+          label={
+            <button
+              type="button"
+              onClick={() => setChoicesCollapsed((c) => !c)}
+              style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", fontFamily: "monospace", fontSize: 9, letterSpacing: 1, display: "flex", alignItems: "center", gap: 4, padding: 0 }}
+            >
+              <span>{choicesCollapsed ? "▶" : "▼"}</span>
+              {`CHOICES (${node.choices.length})`}
+            </button>
+          }
           right={
             <SmBtn
               onClick={() => {
@@ -1942,7 +2028,7 @@ function NodePanel({ node, tree }) {
             </SmBtn>
           }
         />
-        {node.choices.map((ch, i) => (
+        {!choicesCollapsed && node.choices.map((ch, i) => (
           <div
             key={ch.id}
             style={{
@@ -3058,9 +3144,10 @@ const PANELS = [
 ]
 
 const HOTKEYS = [
-  ["N", "New node (smart: fills empty choice first)"],
+  ["N", "New node (fills first empty choice, then nextId)"],
   ["C", "Add choice to node"],
   ["Z", "Undo last change"],
+  ["Home", "Jump to root node"],
   ["Del", "Delete selected node"],
   ["← → ↑ ↓", "Nudge node"],
   ["Tab", "Cycle nodes"],

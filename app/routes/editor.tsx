@@ -434,6 +434,9 @@ export default function EditorRoute() {
         case "ArrowDown":
           handleMovement(e)
           break
+        case "Home":
+          if (rootId && nodes[rootId]) setSel(rootId)
+          break
         case "Tab":
           handleTab(e)
           break
