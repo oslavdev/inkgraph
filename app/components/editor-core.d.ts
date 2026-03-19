@@ -115,6 +115,7 @@ export interface TreeState {
   addScene: () => void
   updateScene: (id: string, patch: Partial<Scene>) => void
   deleteScene: (id: string) => void
+  reorderScenes: (scenes: Scene[]) => void
   characters: Character[]
   addChar: () => void
   updateChar: (id: string, patch: Partial<Character>) => void
