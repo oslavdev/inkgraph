@@ -1274,7 +1274,6 @@ export default function EditorRoute() {
                 padding: "3px 9px",
                 cursor: "pointer",
                 fontFamily: "monospace",
-                title: "Undo (Z)",
               }}
               onClick={undo}
               title="Undo (Z)"

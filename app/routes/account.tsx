@@ -158,6 +158,7 @@ function BackBtn({ onBack }: { onBack: () => void }) {
   return (
     <button
       type="button"
+      type="button"
       onClick={onBack}
       style={{
         background: "none",
@@ -277,6 +278,7 @@ export default function AccountPage({ loaderData }: { loaderData: ReturnType<Awa
       >
         <button
           type="button"
+          type="button"
           onClick={() => navigate("/editor")}
           style={{
             background: "none",
@@ -385,6 +387,7 @@ export default function AccountPage({ loaderData }: { loaderData: ReturnType<Awa
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
               <button
                 type="button"
+                type="button"
                 onClick={() => {
                   setSection("password")
                   reset()
@@ -442,6 +445,7 @@ export default function AccountPage({ loaderData }: { loaderData: ReturnType<Awa
 
               <button
                 type="button"
+                type="button"
                 onClick={doSignOut}
                 style={{
                   background: "transparent",
@@ -472,6 +476,7 @@ export default function AccountPage({ loaderData }: { loaderData: ReturnType<Awa
             </div>
 
             <button
+              type="button"
               type="button"
               onClick={() => {
                 setSection("delete")
@@ -548,6 +553,7 @@ export default function AccountPage({ loaderData }: { loaderData: ReturnType<Awa
             <StatusBox msg={error} variant="error" />
             <StatusBox msg={ok} variant="success" />
             <button
+              type="button"
               type="button"
               onClick={doChangePw}
               disabled={loading}
@@ -646,6 +652,7 @@ export default function AccountPage({ loaderData }: { loaderData: ReturnType<Awa
             </div>
             <StatusBox msg={error || fetcherError} variant="error" />
             <button
+              type="button"
               type="button"
               onClick={doDelete}
               disabled={fetcher.state !== "idle"}

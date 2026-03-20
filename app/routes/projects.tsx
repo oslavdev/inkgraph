@@ -257,6 +257,7 @@ function ProjectForm({
           <div style={{ display: "flex", gap: 8 }}>
             <button
               type="button"
+              type="button"
               onClick={submit}
               disabled={loading || !name.trim()}
               style={{
@@ -276,6 +277,7 @@ function ProjectForm({
               {loading ? "…" : intent === "create" ? "Create project" : "Save changes"}
             </button>
             <button
+              type="button"
               type="button"
               onClick={onCancel}
               style={{
@@ -333,6 +335,7 @@ function ProjectCard({ project: p, onOpen, onRename, onDelete }: ProjectCardProp
 
       <button
         type="button"
+        type="button"
         onClick={onOpen}
         style={{
           display: "block",
@@ -385,6 +388,7 @@ function ProjectCard({ project: p, onOpen, onRename, onDelete }: ProjectCardProp
       <div style={{ position: "absolute", top: 12, right: 12 }}>
         <button
           type="button"
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             setMenuOpen((o) => !o)
@@ -432,6 +436,7 @@ function ProjectCard({ project: p, onOpen, onRename, onDelete }: ProjectCardProp
                 { label: "Delete", action: onDelete, color: C.danger },
               ].map(({ label, action, color }) => (
                 <button
+                  type="button"
                   key={label}
                   type="button"
                   onClick={(e) => {
@@ -676,6 +681,7 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
+                type="button"
                 onClick={() => doDelete(deleting)}
                 style={{
                   flex: 1,
@@ -693,6 +699,7 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
                 Delete permanently
               </button>
               <button
+                type="button"
                 type="button"
                 onClick={() => setDeleting(null)}
                 style={{
@@ -729,6 +736,7 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
       >
         <button
           type="button"
+          type="button"
           onClick={() => navigate("/")}
           style={{
             background: "none",
@@ -746,6 +754,7 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
         <div style={{ flex: 1 }} />
 
         <button
+          type="button"
           type="button"
           onClick={() => navigate(isGuest ? "/login" : "/account")}
           style={{
@@ -824,6 +833,7 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <button
               type="button"
+              type="button"
               onClick={() => navigate("/simulator")}
               style={{
                 background: "transparent",
@@ -844,6 +854,7 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
               Simulate
             </button>
             <button
+              type="button"
               type="button"
               onClick={() => setShowCreate(true)}
               style={{
@@ -887,6 +898,7 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
               You can create as many as you need.
             </p>
             <button
+              type="button"
               type="button"
               onClick={() => setShowCreate(true)}
               style={{

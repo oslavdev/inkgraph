@@ -290,13 +290,13 @@ function useTree(initialData = null) {
     setNodes((n) => {
       const nx = { ...n }
       delete nx[id]
-      Object.keys(nx).forEach((k) => {
+      for (const k of Object.keys(nx)) {
         if (nx[k].nextId === id) nx[k] = { ...nx[k], nextId: null }
         nx[k] = {
           ...nx[k],
           choices: nx[k].choices.map((c) => (c.nextId === id ? { ...c, nextId: null } : c)),
         }
-      })
+      }
       return nx
     })
     setSel(rootId)
@@ -406,7 +406,13 @@ function Arrow({ from, to, color, label, onClick }) {
     my = (from.y + to.y) / 2
   const cid = color.replace(/[^a-z0-9]/gi, "")
   return (
-    <g style={{ cursor: "pointer" }} onClick={onClick}>
+    <g
+      style={{ cursor: "pointer" }}
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick?.() }}
+    >
       <path d={path} fill="none" stroke="transparent" strokeWidth={12} />
       <path
         d={path}
@@ -474,7 +480,8 @@ function Minimap({ nodes, pan, viewW, viewH }) {
         pointerEvents: "none",
       }}
     >
-      <svg width={MM_W} height={MM_H}>
+      <svg
+      aria-hidden="true" width={MM_W} height={MM_H}>
         <title>Minimap</title>
         {nlist.map((nd) => {
           const tag = TAG_DEFS[nd.tag || "none"]
@@ -509,8 +516,7 @@ function Minimap({ nodes, pan, viewW, viewH }) {
               />
             )
           }
-          // biome-ignore lint/complexity/noForEach: <explanation>
-          nd.choices.forEach((ch) => {
+          for (const ch of nd.choices) {
             if (ch.nextId && nodes[ch.nextId]) {
               const t = nodes[ch.nextId]
               lines.push(
@@ -526,7 +532,7 @@ function Minimap({ nodes, pan, viewW, viewH }) {
                 />
               )
             }
-          })
+          }
           return lines
         })}
         <rect
@@ -687,6 +693,7 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
         Root
       </button>
       <svg
+      aria-hidden="true"
         ref={svgRef}
         style={{
           width: "100%",
@@ -749,7 +756,7 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
               />
             )
           }
-          nd.choices.forEach((ch, i) => {
+          for (const [i, ch] of nd.choices.entries()) {
             if (ch.nextId && nodes[ch.nextId]) {
               arrows.push(
                 <Arrow
@@ -762,7 +769,7 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
                 />
               )
             }
-          })
+          }
           return arrows
         })}
 
@@ -1011,6 +1018,7 @@ function Tooltip({ label, children }) {
 
 const IBtn = ({ style, ...p }) => (
   <button
+type="button"
     style={{
       background: "none",
       border: "none",
@@ -1326,6 +1334,7 @@ function CharactersPanel({ tree }) {
                     <div
                       key={col}
                       onClick={() => updateChar(ch.id, { color: col })}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") updateChar(ch.id, { color: col }) }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault()
@@ -1353,6 +1362,7 @@ function CharactersPanel({ tree }) {
       </div>
       <div style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}` }}>
         <button
+type="button"
           onClick={() => {
             const c = addChar()
             setEditing(c.id)
@@ -1407,7 +1417,7 @@ function VariablesPanel({ tree }) {
                   fontFamily: "monospace",
                   color: typeColor[v.type],
                   background: "#111",
-                  border: `1px solid #1f1f1f`,
+                  border: "1px solid #1f1f1f",
                   borderRadius: 2,
                   padding: "1px 4px",
                 }}
@@ -1457,6 +1467,7 @@ function VariablesPanel({ tree }) {
                 <div style={{ display: "flex", gap: 4 }}>
                   {VAR_TYPES.map((t) => (
                     <button
+type="button"
                       key={t}
                       onClick={() =>
                         updateVar(v.id, {
@@ -1484,8 +1495,10 @@ function VariablesPanel({ tree }) {
                   <div style={{ display: "flex", gap: 4 }}>
                     {["true", "false"].map((val) => (
                       <button
+type="button"
                         key={val}
                         onClick={() => updateVar(v.id, { defaultValue: val })}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") updateVar(v.id, { defaultValue: val }) }}
                         style={{
                           flex: 1,
                           background: v.defaultValue === val ? "#0e1a0e" : "#0d0d0d",
@@ -1543,6 +1556,7 @@ function VariablesPanel({ tree }) {
       </div>
       <div style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}` }}>
         <button
+type="button"
           onClick={() => {
             const v = addVar()
             setEditing(v.id)
@@ -1572,10 +1586,11 @@ function ExportPanel({ tree }) {
   return (
     <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
       <button
+type="button"
         onClick={exportAll}
         style={{
           background: "#0a1f0a",
-          border: `1px solid #0f2f0f`,
+          border: "1px solid #0f2f0f",
           color: C.success,
           borderRadius: 4,
           padding: "8px 12px",
@@ -1588,10 +1603,11 @@ function ExportPanel({ tree }) {
         ↓ Export JSON
       </button>
       <button
+type="button"
         onClick={() => fileRef.current.click()}
         style={{
           background: "#0d0d1f",
-          border: `1px solid #1a1a3f`,
+          border: "1px solid #1a1a3f",
           color: C.accent,
           borderRadius: 4,
           padding: "8px 12px",
@@ -1825,8 +1841,12 @@ function NodePanel({ node, tree }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 12 }}>
         {Object.entries(TAG_DEFS).map(([k, t]) => (
           <button
+type="button"
             key={k}
             onClick={() => upd(node.id, { tag: k })}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") upd(node.id, { tag: k }) }}
+            role="button"
+            tabIndex={0}
             style={{
               background: node.tag === k ? t.bg : "#0d0d0d",
               border: `1px solid ${node.tag === k ? t.stripe : C.border}`,
@@ -1847,7 +1867,11 @@ function NodePanel({ node, tree }) {
       <Sec label="CHARACTER" />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 12 }}>
         <button
+type="button"
           onClick={() => upd(node.id, { characterId: null })}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") upd(node.id, { characterId: null }) }}
+          role="button"
+          tabIndex={0}
           style={{
             background: !node.characterId ? "#1a1a2e" : "#0d0d0d",
             border: `1px solid ${!node.characterId ? C.accent : C.border}`,
@@ -1863,8 +1887,12 @@ function NodePanel({ node, tree }) {
         </button>
         {characters.map((ch) => (
           <button
+type="button"
             key={ch.id}
             onClick={() => upd(node.id, { characterId: ch.id, speaker: ch.name })}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") upd(node.id, { characterId: ch.id, speaker: ch.name }) }}
+            role="button"
+            tabIndex={0}
             style={{
               display: "flex",
               alignItems: "center",
@@ -2288,7 +2316,7 @@ function GuideModal({ onClose }) {
           key={i}
           style={{
             background: "#0e0e1e",
-            border: `1px solid #2a2a4a`,
+            border: "1px solid #2a2a4a",
             borderLeft: `3px solid ${C.accent}`,
             borderRadius: 4,
             padding: "10px 14px",
@@ -2333,7 +2361,7 @@ function GuideModal({ onClose }) {
                     style={{
                       textAlign: "left",
                       padding: "6px 10px",
-                      borderBottom: `1px solid #2a2a2a`,
+                      borderBottom: "1px solid #2a2a2a",
                       color: C.textMuted,
                       fontFamily: "monospace",
                       fontSize: 10,
@@ -2348,7 +2376,7 @@ function GuideModal({ onClose }) {
             </thead>
             <tbody>
               {rows.map((row, j) => (
-                <tr key={j} style={{ borderBottom: `1px solid #161616` }}>
+                <tr key={j} style={{ borderBottom: "1px solid #161616" }}>
                   {row.map((cell, k) => (
                     <td
                       key={k}
@@ -2423,8 +2451,10 @@ function GuideModal({ onClose }) {
           <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
             {GUIDE_SECTIONS.map((s, i) => (
               <button
+                type="button"
                 key={i}
                 onClick={() => setActive(i)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setActive(i) }}
                 style={{
                   width: "100%",
                   textAlign: "left",
@@ -2460,6 +2490,7 @@ function GuideModal({ onClose }) {
           >
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: C.text }}>{sec.title}</h2>
             <button
+type="button"
               onClick={onClose}
               style={{
                 background: "transparent",
@@ -2476,7 +2507,11 @@ function GuideModal({ onClose }) {
             </button>
           </div>
           <div ref={contentRef} style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-            {sec.content.map((block, i) => renderBlock(block, i))}
+            {sec.content.map((block, i) => (
+              <div key={`${block.type}-${i}`}>
+                {renderBlock(block, i)}
+              </div>
+            ))}
           </div>
           <div
             style={{
@@ -2487,6 +2522,7 @@ function GuideModal({ onClose }) {
             }}
           >
             <button
+              type="button"
               onClick={() => setActive((a) => Math.max(0, a - 1))}
               disabled={active === 0}
               style={{
@@ -2503,6 +2539,7 @@ function GuideModal({ onClose }) {
               ← Prev
             </button>
             <button
+              type="button"
               onClick={() => setActive((a) => Math.min(GUIDE_SECTIONS.length - 1, a + 1))}
               disabled={active === GUIDE_SECTIONS.length - 1}
               style={{
@@ -2545,7 +2582,7 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
         style={{
           width: "min(420px,92vw)",
           background: "#0f0f0f",
-          border: `1px solid #2a2a2a`,
+          border: "1px solid #2a2a2a",
           borderRadius: 8,
           overflow: "hidden",
           boxShadow: "0 32px 80px rgba(0,0,0,0.9)",
@@ -2560,14 +2597,15 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
                 height: 36,
                 borderRadius: 8,
                 background: "#141422",
-                border: `1px solid #2a2a4a`,
+                border: "1px solid #2a2a4a",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
               }}
             >
-              <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+              <svg
+      aria-hidden="true" width="18" height="18" fill="none" viewBox="0 0 24 24">
                 <path
                   d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2Z"
                   stroke={C.accent}
@@ -2612,6 +2650,7 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
           </p>
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             <button
+type="button"
               onClick={onLogin}
               style={{
                 flex: 1,
@@ -2629,11 +2668,12 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
               Sign in
             </button>
             <button
+type="button"
               onClick={onRegister}
               style={{
                 flex: 1,
                 background: "transparent",
-                border: `1px solid #3a3a6a`,
+                border: "1px solid #3a3a6a",
                 borderRadius: 5,
                 color: "#a0a0e0",
                 fontSize: 13,
@@ -2647,6 +2687,7 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
             </button>
           </div>
           <button
+type="button"
             onClick={onClose}
             style={{
               width: "100%",
@@ -2684,7 +2725,7 @@ function ProfileModal({ onClose }) {
     width: "100%",
     boxSizing: "border-box",
     background: "#0d0d0d",
-    border: `1px solid #2a2a2a`,
+    border: "1px solid #2a2a2a",
     borderRadius: 5,
     color: C.text,
     fontSize: 14,
@@ -2727,6 +2768,7 @@ function ProfileModal({ onClose }) {
       >
         {section !== "main" ? (
           <button
+type="button"
             onClick={() => setSection("main")}
             style={{
               background: "none",
@@ -2741,7 +2783,8 @@ function ProfileModal({ onClose }) {
               fontFamily: "inherit",
             }}
           >
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+            <svg
+      aria-hidden="true" width="16" height="16" fill="none" viewBox="0 0 24 24">
               <path
                 d="M19 12H5M5 12l7-7M5 12l7 7"
                 stroke="currentColor"
@@ -2757,6 +2800,7 @@ function ProfileModal({ onClose }) {
         )}
         <div style={{ flex: 1 }} />
         <button
+type="button"
           onClick={onClose}
           style={{
             background: "none",
@@ -2771,7 +2815,8 @@ function ProfileModal({ onClose }) {
             borderRadius: 6,
           }}
         >
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+          <svg
+      aria-hidden="true" width="16" height="16" fill="none" viewBox="0 0 24 24">
             <path
               d="M18 6 6 18M6 6l12 12"
               stroke="currentColor"
@@ -2826,8 +2871,9 @@ function ProfileModal({ onClose }) {
 
               {/* Username field (read-only) */}
               <div style={{ marginBottom: 20 }}>
-                <label style={labelStyle}>USERNAME</label>
+                <label htmlFor="profile-username" style={labelStyle}>USERNAME</label>
                 <input
+                  id="profile-username"
                   readOnly
                   value="username"
                   style={{ ...inputStyle, color: C.textMuted, cursor: "default" }}
@@ -2836,8 +2882,9 @@ function ProfileModal({ onClose }) {
 
               {/* Email field (read-only) */}
               <div style={{ marginBottom: 32 }}>
-                <label style={labelStyle}>EMAIL</label>
+                <label htmlFor="profile-email" style={labelStyle}>EMAIL</label>
                 <input
+                  id="profile-email"
                   readOnly
                   value="user@example.com"
                   style={{ ...inputStyle, color: C.textMuted, cursor: "default" }}
@@ -2846,6 +2893,7 @@ function ProfileModal({ onClose }) {
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <button
+type="button"
                   onClick={() => setSection("password")}
                   style={{
                     width: "100%",
@@ -2863,7 +2911,8 @@ function ProfileModal({ onClose }) {
                     gap: 10,
                   }}
                 >
-                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+                  <svg
+      aria-hidden="true" width="16" height="16" fill="none" viewBox="0 0 24 24">
                     <rect
                       x="3"
                       y="11"
@@ -2882,6 +2931,7 @@ function ProfileModal({ onClose }) {
                   </svg>
                   Change password
                   <svg
+      aria-hidden="true"
                     style={{ marginLeft: "auto" }}
                     width="14"
                     height="14"
@@ -2917,7 +2967,8 @@ function ProfileModal({ onClose }) {
                     gap: 10,
                   }}
                 >
-                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+                  <svg
+      aria-hidden="true" width="16" height="16" fill="none" viewBox="0 0 24 24">
                     <path
                       d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"
                       stroke="currentColor"
@@ -2928,6 +2979,7 @@ function ProfileModal({ onClose }) {
                   </svg>
                   Delete account
                   <svg
+      aria-hidden="true"
                     style={{ marginLeft: "auto" }}
                     width="14"
                     height="14"
@@ -2958,24 +3010,25 @@ function ProfileModal({ onClose }) {
               </p>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>CURRENT PASSWORD</label>
-                <input type="password" placeholder="••••••••" style={inputStyle} />
+                <label htmlFor="profile-cur-pw" style={labelStyle}>CURRENT PASSWORD</label>
+                <input id="profile-cur-pw" type="password" placeholder="••••••••" style={inputStyle} />
               </div>
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>NEW PASSWORD</label>
-                <input type="password" placeholder="••••••••" style={inputStyle} />
+                <label htmlFor="profile-new-pw" style={labelStyle}>NEW PASSWORD</label>
+                <input id="profile-new-pw" type="password" placeholder="••••••••" style={inputStyle} />
               </div>
               <div style={{ marginBottom: 32 }}>
-                <label style={labelStyle}>CONFIRM NEW PASSWORD</label>
-                <input type="password" placeholder="••••••••" style={inputStyle} />
+                <label htmlFor="profile-confirm-pw" style={labelStyle}>CONFIRM NEW PASSWORD</label>
+                <input id="profile-confirm-pw" type="password" placeholder="••••••••" style={inputStyle} />
               </div>
 
               <button
+type="button"
                 disabled
                 style={{
                   width: "100%",
                   background: "#1a1a2e",
-                  border: `1px solid #3a3a6a`,
+                  border: "1px solid #3a3a6a",
                   borderRadius: 6,
                   color: "#6a6aaa",
                   fontSize: 13,
@@ -3015,7 +3068,7 @@ function ProfileModal({ onClose }) {
               <div
                 style={{
                   background: "#1a0a0a",
-                  border: `1px solid #3a1010`,
+                  border: "1px solid #3a1010",
                   borderRadius: 6,
                   padding: "14px 16px",
                   marginBottom: 28,
@@ -3038,16 +3091,17 @@ function ProfileModal({ onClose }) {
               </div>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>TYPE YOUR USERNAME TO CONFIRM</label>
-                <input placeholder="username" style={{ ...inputStyle, borderColor: "#3a1010" }} />
+                <label htmlFor="profile-del-confirm" style={labelStyle}>TYPE YOUR USERNAME TO CONFIRM</label>
+                <input id="profile-del-confirm" placeholder="username" style={{ ...inputStyle, borderColor: "#3a1010" }} />
               </div>
 
               <button
+type="button"
                 disabled
                 style={{
                   width: "100%",
                   background: "#1a0a0a",
-                  border: `1px solid #3a1010`,
+                  border: "1px solid #3a1010",
                   borderRadius: 6,
                   color: "#774444",
                   fontSize: 13,
@@ -3084,7 +3138,8 @@ const PANELS = [
     id: "scenes",
     label: "Scenes",
     icon: (
-      <svg width="15" height="15" fill="none" viewBox="0 0 24 24">
+      <svg
+      aria-hidden="true" width="15" height="15" fill="none" viewBox="0 0 24 24">
         <rect x="3" y="3" width="18" height="4" rx="1" stroke="currentColor" strokeWidth="1.5" />
         <rect x="3" y="10" width="18" height="4" rx="1" stroke="currentColor" strokeWidth="1.5" />
         <rect x="3" y="17" width="18" height="4" rx="1" stroke="currentColor" strokeWidth="1.5" />
@@ -3095,7 +3150,8 @@ const PANELS = [
     id: "characters",
     label: "Characters",
     icon: (
-      <svg width="15" height="15" fill="none" viewBox="0 0 24 24">
+      <svg
+      aria-hidden="true" width="15" height="15" fill="none" viewBox="0 0 24 24">
         <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="1.5" />
         <path
           d="M2 21c0-4 3-7 7-7s7 3 7 7"
@@ -3111,7 +3167,8 @@ const PANELS = [
     id: "variables",
     label: "Variables & Flags",
     icon: (
-      <svg width="15" height="15" fill="none" viewBox="0 0 24 24">
+      <svg
+      aria-hidden="true" width="15" height="15" fill="none" viewBox="0 0 24 24">
         <path
           d="M4 6h16M4 12h10M4 18h6"
           stroke="currentColor"
@@ -3126,7 +3183,8 @@ const PANELS = [
     id: "export",
     label: "Export / Import",
     icon: (
-      <svg width="15" height="15" fill="none" viewBox="0 0 24 24">
+      <svg
+      aria-hidden="true" width="15" height="15" fill="none" viewBox="0 0 24 24">
         <path
           d="M12 3v10m0 0-3-3m3 3 3-3"
           stroke="currentColor"

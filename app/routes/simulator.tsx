@@ -86,8 +86,10 @@ function Silhouette({ color = "#444", size = 80 }: { color?: string; size?: numb
       viewBox="0 0 80 80"
       fill="none"
       aria-hidden="true"
+      role="img"
       style={{ flexShrink: 0 }}
     >
+      <title>Character silhouette</title>
       <circle cx="40" cy="22" r="13" fill={color} opacity="0.7" />
       <path
         d="M14 72c0-14.36 11.64-26 26-26h0c14.36 0 26 11.64 26 26"
@@ -282,7 +284,7 @@ export default function SimulatorPage() {
           flexDirection: "column",
         }}
       >
-        <style>{`@keyframes blink { 50% { opacity: 0 } }`}</style>
+        <style>{"@keyframes blink { 50% { opacity: 0 } }"}</style>
         <nav
           style={{
             height: 52,
@@ -295,6 +297,7 @@ export default function SimulatorPage() {
           }}
         >
           <button
+            type="button"
             type="button"
             onClick={() => navigate("/projects")}
             style={{
@@ -414,6 +417,7 @@ export default function SimulatorPage() {
 
             <button
               type="button"
+              type="button"
               onClick={start}
               disabled={!selectedSceneId || !sceneData}
               style={{
@@ -456,7 +460,7 @@ export default function SimulatorPage() {
           padding: 24,
         }}
       >
-        <style>{`@keyframes blink { 50% { opacity: 0 } }`}</style>
+        <style>{"@keyframes blink { 50% { opacity: 0 } }"}</style>
         <div style={{ width: "min(560px, 100%)" }}>
           <div style={{ textAlign: "center", marginBottom: 32 }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>🎬</div>
@@ -520,7 +524,7 @@ export default function SimulatorPage() {
                 key={`log-${i}-${entry.speaker}`}
                 style={{
                   padding: "8px 16px",
-                  borderBottom: i < log.length - 1 ? `1px solid #151515` : "none",
+                  borderBottom: i < log.length - 1 ? "1px solid #151515" : "none",
                   fontSize: 12,
                 }}
               >
@@ -534,6 +538,7 @@ export default function SimulatorPage() {
 
           <div style={{ display: "flex", gap: 10 }}>
             <button
+              type="button"
               type="button"
               onClick={start}
               style={{
@@ -553,6 +558,7 @@ export default function SimulatorPage() {
             </button>
             <button
               type="button"
+              type="button"
               onClick={reset}
               style={{
                 flex: 1,
@@ -569,6 +575,7 @@ export default function SimulatorPage() {
               Choose different scene
             </button>
             <button
+              type="button"
               type="button"
               onClick={() => navigate("/projects")}
               style={{
@@ -634,6 +641,7 @@ export default function SimulatorPage() {
         }}
       >
         <button
+          type="button"
           type="button"
           onClick={reset}
           style={{ background: "none", border: "none", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "monospace", display: "flex", alignItems: "center", gap: 5 }}
@@ -749,12 +757,13 @@ export default function SimulatorPage() {
             </div>
             {currentNode.choices.map((ch, i) => (
               <button
+                type="button"
                 key={ch.id}
                 type="button"
                 onClick={() => pickChoice(ch)}
                 style={{
                   background: "#0d0d1a",
-                  border: `1px solid #2a2a5a`,
+                  border: "1px solid #2a2a5a",
                   borderRadius: 8,
                   color: C.text,
                   fontSize: 14,
@@ -808,6 +817,7 @@ export default function SimulatorPage() {
         {textDone && isLinear && (
           <div style={{ display: "flex", gap: 10 }}>
             <button
+              type="button"
               type="button"
               onClick={advance}
               style={{

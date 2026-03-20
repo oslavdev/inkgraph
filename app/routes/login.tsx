@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { redirect, useFetcher, useNavigate, useSearchParams } from "react-router"
-import { ToastContainer, useToast } from "../components/Toast"
+import { ToastContainer, useToast } from "../components/toast"
 import { auth } from "../server/auth.server"
 import { getSession } from "../server/session.server"
 

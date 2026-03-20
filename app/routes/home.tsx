@@ -100,7 +100,7 @@ export default function HomeRoute() {
       const W = canvas.width
       const H = canvas.height
       ctx.clearRect(0, 0, W, H)
-      BLOBS.forEach((b, i) => {
+      for (const [i, b] of BLOBS.entries()) {
         const ox = Math.sin(t * b.speed * 1000 + i * 2.1) * 0.08
         const oy = Math.cos(t * b.speed * 800 + i * 1.7) * 0.06
         const cx = (b.x + ox) * W
@@ -114,7 +114,7 @@ export default function HomeRoute() {
         ctx.beginPath()
         ctx.arc(cx, cy, r, 0, Math.PI * 2)
         ctx.fill()
-      })
+      }
       t++
       raf = requestAnimationFrame(draw)
     }
@@ -938,8 +938,8 @@ export default function HomeRoute() {
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
             {(["Windows", "macOS"] as const).map((os) => (
               <button
-                key={os}
                 type="button"
+                key={os}
                 disabled
                 style={{
                   display: "flex",

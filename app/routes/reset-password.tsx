@@ -196,6 +196,7 @@ export default function ResetPasswordPage() {
 
               <button
                 type="button"
+                type="button"
                 onClick={doReset}
                 disabled={loading}
                 style={{
@@ -226,6 +227,7 @@ export default function ResetPasswordPage() {
                 You can now sign in with your new password.
               </p>
               <button
+                type="button"
                 type="button"
                 onClick={() => navigate("/login")}
                 style={{
