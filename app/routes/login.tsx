@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { redirect, useFetcher, useNavigate, useSearchParams } from "react-router"
-import { ToastContainer, useToast } from "../components/Toast"
+import { ToastContainer, useToast } from "../components/toast"
 import { auth } from "../server/auth.server"
 import { getSession } from "../server/session.server"
 
@@ -325,7 +325,13 @@ export default function LoginPage() {
           <div style={{ marginBottom: 20 }}>
             <button
               type="button"
-              onClick={() => navigate("/")}
+              onClick={() => {
+                // Go back to where they came from, not always the landing page
+                const from = searchParams.get("from")
+                if (from) { navigate(from); return }
+                if (redirectTo && redirectTo !== "/editor") { navigate(redirectTo); return }
+                navigate(-1 as never)
+              }}
               style={{
                 background: "none",
                 border: "none",
@@ -348,7 +354,7 @@ export default function LoginPage() {
                   strokeLinejoin="round"
                 />
               </svg>
-              Back to home
+              Back
             </button>
           </div>
 
@@ -464,7 +470,7 @@ export default function LoginPage() {
 
           {view === "forgot" && (() => {
             const fd = forgotFetcher.data
-            if (fd && fd.ok) {
+            if (fd?.ok) {
               // Success — switch to sent view on next render
               setTimeout(() => setView("forgot-sent"), 0)
             }

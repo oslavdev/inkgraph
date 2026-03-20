@@ -596,11 +596,7 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
           title="New project"
           intent="create"
           fetcher={fetcher}
-          onCancel={() => {
-            // If no projects exist, going back means going to landing page
-            if (projects.length === 0) { navigate("/"); return }
-            setShowCreate(false)
-          }}
+          onCancel={() => setShowCreate(false)}
           onGuestSubmit={isGuest ? (name, description) => {
             const p = mkGuestProject(name, description)
             setGuestProjects((prev) => {
@@ -609,11 +605,14 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
               return updated
             })
             try {
-              const d = emptyProjectData()
+              const d = JSON.parse(p.data) as {
+                scenes: unknown; nodesByScene: unknown; characters: unknown; variables: unknown
+              }
               localStorage.setItem("vn2-scenes", JSON.stringify(d.scenes))
               localStorage.setItem("vn2-nbs", JSON.stringify(d.nodesByScene))
               localStorage.setItem("vn2-chars", JSON.stringify(d.characters ?? []))
               localStorage.setItem("vn2-vars", JSON.stringify(d.variables ?? []))
+              localStorage.setItem("vn2-project-name", name)
               localStorage.removeItem("vn2-active-scene")
             } catch { /* noop */ }
             navigate("/editor")

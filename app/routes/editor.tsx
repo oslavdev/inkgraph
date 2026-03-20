@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router"
-import { ToastContainer, useToast } from "../components/Toast"
+import { ToastContainer, useToast } from "../components/toast"
 import {
   C,
   Canvas,
@@ -289,7 +289,6 @@ export default function EditorRoute() {
   })()
   const tree = useTree(initialData)
   const { nodes, sel, setSel, addNode, addNodeSmart, addChoice, delNode, movNode, rootId, undo } = tree
-
   const [projectName, setProjectName] = useState(() => {
     if (project?.name) return project.name
     // Guest: name was stored in localStorage when the project was opened
@@ -298,7 +297,8 @@ export default function EditorRoute() {
     }
     return "Untitled"
   })
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
+  const [saveStatus, setSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved">("idle")
+  const lastSavedDataRef = useRef<string>("")
   const [showHelp, setShowHelp] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const [expanded, setExpanded] = useState(true)
@@ -306,6 +306,24 @@ export default function EditorRoute() {
   const [showNodeSheet, setShowNodeSheet] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const viewRef = useRef<HTMLDivElement>(null)
+
+  // Initialise lastSavedDataRef on first render so we don't start dirty
+  if (!lastSavedDataRef.current && initialData) {
+    lastSavedDataRef.current = JSON.stringify({
+      scenes: initialData.scenes ?? [],
+      nodesByScene: initialData.nodesByScene ?? {},
+      characters: initialData.characters ?? [],
+      variables: initialData.variables ?? [],
+    })
+  }
+
+  // Track dirty state — computed after all refs/state are declared
+  const currentDataStr = JSON.stringify({
+    scenes: tree.scenes,
+    nodesByScene: tree.nodesByScene ?? {},
+    characters: tree.characters,
+    variables: tree.variables,
+  })
 
   useEffect(() => {
     setIsMobile(window.innerWidth < 700)
@@ -315,6 +333,13 @@ export default function EditorRoute() {
     window.addEventListener("resize", check)
     return () => window.removeEventListener("resize", check)
   }, [])
+
+  // Mark dirty when tree data changes relative to last save
+  useEffect(() => {
+    if (lastSavedDataRef.current && currentDataStr !== lastSavedDataRef.current) {
+      setSaveStatus((s) => (s === "saving" ? s : "dirty"))
+    }
+  }, [currentDataStr])
 
   const prevSel = useRef<string | null>(null)
   useEffect(() => {
@@ -330,9 +355,32 @@ export default function EditorRoute() {
       variables: tree.variables,
     }
     if (!project) {
-      // Guest: persist name to localStorage so it survives navigation
+      // Guest: write current tree data back into inkgraph-guest-projects
       if (typeof window !== "undefined") {
         localStorage.setItem("vn2-project-name", projectName)
+        try {
+          const GUEST_KEY = "inkgraph-guest-projects"
+          const stored = JSON.parse(localStorage.getItem(GUEST_KEY) ?? "[]") as Array<{
+            id: string; name: string; description: string; data: string;
+            userId: string; lastOpenedAt: number; createdAt: number; updatedAt: number
+          }>
+          // Find by name (guest projects have no ID in the editor URL)
+          const now = Math.floor(Date.now() / 1000)
+          const serialised = JSON.stringify(data)
+          // Update the most-recently-opened project (lastOpenedAt is highest)
+          const sorted = [...stored].sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))
+          if (sorted.length > 0) {
+            const updated = stored.map((p) =>
+              p.id === sorted[0].id
+                ? { ...p, name: projectName, data: serialised, updatedAt: now }
+                : p
+            )
+            localStorage.setItem(GUEST_KEY, JSON.stringify(updated))
+          }
+        } catch { /* noop */ }
+        lastSavedDataRef.current = currentDataStr
+        setSaveStatus("saved")
+        setTimeout(() => setSaveStatus("idle"), 2000)
       }
       return
     }
@@ -342,6 +390,7 @@ export default function EditorRoute() {
     form.set("name", projectName)
     form.set("description", project.description ?? "")
     form.set("data", JSON.stringify(data))
+    lastSavedDataRef.current = currentDataStr
     fetcher.submit(form, { method: "post" })
     setSaveStatus("saving")
   }
@@ -373,6 +422,18 @@ export default function EditorRoute() {
     }, 30_000)
     return () => clearInterval(interval)
   }, [project?.id ?? null])
+
+  // Save + warn on tab close when dirty
+  useEffect(() => {
+    function onUnload(e: BeforeUnloadEvent) {
+      doSaveRef.current()
+      if (saveStatus === "dirty") {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener("beforeunload", onUnload)
+    return () => window.removeEventListener("beforeunload", onUnload)
+  }, [saveStatus])
 
   // Handle save results
   useEffect(() => {
@@ -909,7 +970,10 @@ export default function EditorRoute() {
       >
         <button
           type="button"
-          onClick={() => navigate("/projects")}
+          onClick={() => {
+            doSaveRef.current()
+            navigate("/projects")
+          }}
           style={{
             background: "transparent",
             border: "none",
@@ -956,12 +1020,53 @@ export default function EditorRoute() {
           placeholder="Untitled"
         />
         <div style={{ flex: 1 }} />
-        {saveStatus === "saving" && (
-          <span style={{ fontSize: 10, color: C.textMuted, fontFamily: "monospace" }}>Saving…</span>
-        )}
-        {saveStatus === "saved" && (
-          <span style={{ fontSize: 10, color: C.success, fontFamily: "monospace" }}>✓ Saved</span>
-        )}
+        <button
+          type="button"
+          onClick={doSave}
+          disabled={saveStatus === "saving" || saveStatus === "saved" || saveStatus === "idle"}
+          title={saveStatus === "dirty" ? "Unsaved changes — click to save" : saveStatus === "saving" ? "Saving…" : "All changes saved"}
+          style={{
+            background: saveStatus === "saved"
+              ? "#0a2a0a"
+              : saveStatus === "dirty"
+              ? C.accent
+              : "transparent",
+            border: `1px solid ${saveStatus === "saved" ? C.success : saveStatus === "dirty" ? C.accent : C.border}`,
+            borderRadius: 5,
+            color: saveStatus === "saved" ? C.success : saveStatus === "dirty" ? "#fff" : C.textMuted,
+            fontSize: 11,
+            fontWeight: 700,
+            padding: "5px 12px",
+            cursor: saveStatus === "dirty" ? "pointer" : "default",
+            fontFamily: "monospace",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            transition: "all 0.15s ease",
+            opacity: saveStatus === "saving" ? 0.6 : 1,
+            boxShadow: saveStatus === "saved" ? "0 0 8px rgba(34,197,94,0.25)" : saveStatus === "dirty" ? "0 0 8px rgba(99,102,241,0.3)" : "none",
+          }}
+        >
+          {saveStatus === "saved" ? (
+            <>
+              <svg width="11" height="11" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Saved
+            </>
+          ) : saveStatus === "saving" ? (
+            "Saving…"
+          ) : saveStatus === "dirty" ? (
+            "Save"
+          ) : (
+            <>
+              <svg width="11" height="11" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Saved
+            </>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => navigate("/simulator")}
@@ -985,12 +1090,12 @@ export default function EditorRoute() {
         </button>
         <button
           type="button"
-          onClick={() => navigate("/account")}
+          onClick={() => navigate(user ? "/account" : "/login?from=/editor")}
           style={{
-            background: `linear-gradient(135deg,${C.accent},#a855f7)`,
-            border: "none",
+            background: user ? `linear-gradient(135deg,${C.accent},#a855f7)` : "transparent",
+            border: user ? "none" : `1px solid ${C.border}`,
             borderRadius: 4,
-            color: "#fff",
+            color: user ? "#fff" : C.textMuted,
             fontSize: 11,
             fontWeight: 700,
             padding: "4px 10px",
@@ -999,7 +1104,7 @@ export default function EditorRoute() {
             letterSpacing: 0.3,
           }}
         >
-          {user ? user.name.split(" ")[0] : "Guest"}
+          {user ? user.name.split(" ")[0] : "Sign in"}
         </button>
       </div>
 
@@ -1273,8 +1378,7 @@ export default function EditorRoute() {
                 fontSize: 10,
                 padding: "3px 9px",
                 cursor: "pointer",
-                fontFamily: "monospace",
-                title: "Undo (Z)",
+                fontFamily: "monospace"
               }}
               onClick={undo}
               title="Undo (Z)"
