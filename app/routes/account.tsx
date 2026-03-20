@@ -477,6 +477,108 @@ export default function AccountPage({
               </button>
             </div>
 
+            {/* Support links */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 4,
+              }}
+            >
+              <a
+                href="mailto:support@inkgraph.io"
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 7,
+                  color: C.muted,
+                  fontSize: 13,
+                  padding: "11px 14px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  textAlign: "center",
+                  textDecoration: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                <svg
+                  aria-hidden="true"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M22 6l-10 7L2 6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                Contact us
+              </a>
+              <a
+                href="https://github.com/oslavdev/inkgraph/issues/new?template=bug_report.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 7,
+                  color: C.muted,
+                  fontSize: 13,
+                  padding: "11px 14px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  textAlign: "center",
+                  textDecoration: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                <svg
+                  aria-hidden="true"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M12 8v4M12 16v.5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M9 3h6M12 3v2M7.5 7A5 5 0 0 0 7 12v3a5 5 0 0 0 10 0v-3A5 5 0 0 0 16.5 7"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M7 10H4M17 10h3M7 14H4M17 14h3"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                Report a bug
+              </a>
+            </div>
+
             <button
               type="button"
               onClick={() => {

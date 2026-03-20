@@ -54,7 +54,7 @@ const mkNode = (id, x = 200, y = 100) => ({
   effects: [],
 })
 const mkChoice = (label = "") => ({ id: uid(), label, nextId: null, conditions: [] })
-const mkChar = () => ({ id: uid(), name: "", description: "", color: CHAR_COLORS[0] })
+const mkChar = () => ({ id: uid(), name: "", description: "", color: CHAR_COLORS[0], gender: "", orientation: "", tags: [] })
 const mkVar = (name = "") => ({
   id: uid(),
   name,
@@ -111,6 +111,7 @@ function useTree(initialData = null) {
     return restore("vn2-vars", [])
   })
   const [sel, setSel] = useState(null)
+  const [multiSel, setMultiSel] = useState(new Set())
   const [history, setHistory] = useState([]) // stack of {nodesByScene} snapshots
 
   const pushHistory = (snap) => setHistory((h) => [...h.slice(-49), snap]) // keep last 50
@@ -139,6 +140,15 @@ function useTree(initialData = null) {
   useEffect(() => {
     if (!sel && rootId) setSel(rootId)
   }, [sel, rootId])
+
+  const toggleMultiSel = (id) => {
+    setMultiSel((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) { next.delete(id) } else { next.add(id) }
+      return next
+    })
+  }
+  const clearMultiSel = () => setMultiSel(new Set())
 
   const setNodes = (fn, skipHistory = false) =>
     setNodesByScene((nb) => {
@@ -293,19 +303,37 @@ function useTree(initialData = null) {
     setNodes((n) => {
       const nx = { ...n }
       delete nx[id]
-      Object.keys(nx).forEach((k) => {
+      for (const k of Object.keys(nx)) {
         if (nx[k].nextId === id) nx[k] = { ...nx[k], nextId: null }
         nx[k] = {
           ...nx[k],
           choices: nx[k].choices.map((c) => (c.nextId === id ? { ...c, nextId: null } : c)),
         }
-      })
+      }
       return nx
     })
     setSel(rootId)
   }
   const movNode = (id, dx, dy) =>
     setNodes((n) => ({ ...n, [id]: { ...n[id], x: n[id].x + dx, y: n[id].y + dy } }))
+  const movNodes = (ids, dx, dy) =>
+    setNodes((n) => {
+      const nx = { ...n }
+      for (const id of ids) {
+        if (nx[id]) nx[id] = { ...nx[id], x: nx[id].x + dx, y: nx[id].y + dy }
+      }
+      return nx
+    })
+  const duplicateNode = (id) => {
+    const src = nodes[id]
+    if (!src) return
+    const nid = uid()
+    const nn = { ...src, id: nid, x: src.x + 40, y: src.y + 40,
+      choices: src.choices.map((c) => ({ ...c, id: uid(), nextId: null })),
+      nextId: null }
+    setNodes((n) => ({ ...n, [nid]: nn }))
+    setSel(nid)
+  }
   const linkNodes = (fromId, toId, choiceId = null) =>
     setNodes((n) => {
       const nx = { ...n }
@@ -370,6 +398,11 @@ function useTree(initialData = null) {
     updChoice,
     delNode,
     movNode,
+    movNodes,
+    duplicateNode,
+    multiSel,
+    toggleMultiSel,
+    clearMultiSel,
     linkNodes,
     unlinkNode,
     scenes,
@@ -395,11 +428,11 @@ function useTree(initialData = null) {
 }
 
 // ─── Canvas helpers ───────────────────────────────────────────────────────────
-const getOut = (nd, pan) => ({ x: nd.x + NODE_W / 2 + pan.x, y: nd.y + NODE_H + pan.y })
-const getIn = (nd, pan) => ({ x: nd.x + NODE_W / 2 + pan.x, y: nd.y + pan.y })
-const getChoiceOut = (nd, i, total, pan) => ({
-  x: nd.x + (NODE_W / (total + 1)) * (i + 1) + pan.x,
-  y: nd.y + NODE_H + pan.y,
+const getOut = (nd, pan, zoom = 1) => ({ x: nd.x * zoom + NODE_W / 2 * zoom + pan.x, y: nd.y * zoom + NODE_H * zoom + pan.y })
+const getIn = (nd, pan, zoom = 1) => ({ x: nd.x * zoom + NODE_W / 2 * zoom + pan.x, y: nd.y * zoom + pan.y })
+const getChoiceOut = (nd, i, total, pan, zoom = 1) => ({
+  x: nd.x * zoom + (NODE_W / (total + 1)) * (i + 1) * zoom + pan.x,
+  y: nd.y * zoom + NODE_H * zoom + pan.y,
 })
 
 function Arrow({ from, to, color, label, onClick }) {
@@ -409,7 +442,13 @@ function Arrow({ from, to, color, label, onClick }) {
     my = (from.y + to.y) / 2
   const cid = color.replace(/[^a-z0-9]/gi, "")
   return (
-    <g style={{ cursor: "pointer" }} onClick={onClick}>
+    <g
+      style={{ cursor: "pointer" }}
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick?.() }}
+    >
       <path d={path} fill="none" stroke="transparent" strokeWidth={12} />
       <path
         d={path}
@@ -513,7 +552,7 @@ function Minimap({ nodes, pan, viewW, viewH }) {
             )
           }
           // biome-ignore lint/complexity/noForEach: <explanation>
-          nd.choices.forEach((ch) => {
+          for (const ch of nd.choices) {
             if (ch.nextId && nodes[ch.nextId]) {
               const t = nodes[ch.nextId]
               lines.push(
@@ -529,7 +568,7 @@ function Minimap({ nodes, pan, viewW, viewH }) {
                 />
               )
             }
-          })
+          }
           return lines
         })}
         <rect
@@ -547,16 +586,137 @@ function Minimap({ nodes, pan, viewW, viewH }) {
   )
 }
 
+// ─── Node search palette ──────────────────────────────────────────────────────
+function NodeSearchPalette({ nodes, onSelect, onClose }) {
+  const [q, setQ] = useState("")
+  const inputRef = useRef(null)
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const results = q.trim()
+    ? Object.values(nodes).filter((nd) => {
+        const t = q.toLowerCase()
+        return (
+          nd.text?.toLowerCase().includes(t) ||
+          nd.speaker?.toLowerCase().includes(t) ||
+          nd.choices?.some((c) => c.label?.toLowerCase().includes(t))
+        )
+      }).slice(0, 12)
+    : []
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 12,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 100,
+        width: "min(420px, 90%)",
+        background: "#111",
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        boxShadow: "0 16px 48px rgba(0,0,0,0.8)",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
+        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" stroke={C.textMuted} strokeWidth="1.5" />
+          <path d="M16 16l4 4" stroke={C.textMuted} strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") onClose()
+            if (e.key === "Enter" && results.length) { onSelect(results[0].id); onClose() }
+          }}
+          placeholder="Search nodes by text, speaker, or choice…"
+          style={{
+            flex: 1,
+            background: "none",
+            border: "none",
+            color: C.text,
+            fontSize: 13,
+            outline: "none",
+            fontFamily: "inherit",
+          }}
+        />
+        <button
+          type="button"
+          onClick={onClose}
+          style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 16, lineHeight: 1 }}
+        >
+          ×
+        </button>
+      </div>
+      {results.length === 0 && q.trim() && (
+        <div style={{ padding: "10px 12px", fontSize: 12, color: C.textMuted, fontFamily: "monospace" }}>
+          No results
+        </div>
+      )}
+      {results.map((nd) => (
+        <button
+          key={nd.id}
+          type="button"
+          onClick={() => { onSelect(nd.id); onClose() }}
+          style={{
+            display: "block",
+            width: "100%",
+            background: "transparent",
+            border: "none",
+            borderBottom: "1px solid #151515",
+            padding: "8px 12px",
+            textAlign: "left",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          {nd.speaker && (
+            <span style={{ fontSize: 10, color: C.accent, fontFamily: "monospace", marginRight: 6 }}>
+              {nd.speaker}
+            </span>
+          )}
+          <span style={{ fontSize: 12, color: C.text }}>
+            {nd.text?.slice(0, 80) || <em style={{ color: C.textMuted }}>empty node</em>}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ─── Canvas ───────────────────────────────────────────────────────────────────
 function Canvas({ tree, viewRef, onJumpToRoot }) {
-  const { nodes, rootId, sel, setSel, movNode, linkNodes, unlinkNode, characters } = tree
+  const { nodes, rootId, sel, setSel, multiSel, toggleMultiSel, clearMultiSel, movNode, movNodes, linkNodes, unlinkNode, characters } = tree
   const svgRef = useRef(null)
   const [pan, setPan] = useState({ x: 60, y: 60 })
+  const [zoom, setZoom] = useState(1)
   const [dragN, setDragN] = useState(null)
   const [panning, setPanning] = useState(false)
   const [conn, setConn] = useState(null)
   const [dims, setDims] = useState({ w: 800, h: 600 })
   const lastM = useRef(null)
+
+  // Zoom helpers
+  const zoomIn = () => setZoom((z) => Math.min(2, +(z + 0.1).toFixed(1)))
+  const zoomOut = () => setZoom((z) => Math.max(0.3, +(z - 0.1).toFixed(1)))
+  const zoomReset = () => setZoom(1)
+
+  // Mouse-wheel zoom
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const onWheel = (e) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      const delta = e.deltaY > 0 ? -0.1 : 0.1
+      setZoom((z) => Math.min(2, Math.max(0.3, +(z + delta).toFixed(1))))
+    }
+    el.addEventListener("wheel", onWheel, { passive: false })
+    return () => el.removeEventListener("wheel", onWheel)
+  }, [])
 
   useEffect(() => {
     const obs = new ResizeObserver((entries) => {
@@ -574,14 +734,21 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
   }
   const onSvgDown = (e) => {
     if (!conn) {
+      clearMultiSel()
       setPanning(true)
       lastM.current = { x: e.clientX, y: e.clientY }
     }
   }
   const onNodeDown = (e, id) => {
     e.stopPropagation()
-    setSel(id)
-    setDragN(id)
+    if (e.metaKey || e.ctrlKey) {
+      toggleMultiSel(id)
+      setSel(id)
+    } else {
+      if (!multiSel.has(id)) clearMultiSel()
+      setSel(id)
+      setDragN(id)
+    }
     lastM.current = { x: e.clientX, y: e.clientY }
   }
   const onMove = (e) => {
@@ -591,8 +758,12 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
     const dx = e.clientX - lastM.current.x
     const dy = e.clientY - lastM.current.y
     lastM.current = { x: e.clientX, y: e.clientY }
-    if (dragN) movNode(dragN, dx, dy)
-    else if (panning) setPan((p) => ({ x: p.x + dx, y: p.y + dy }))
+    if (dragN) {
+      if (multiSel.size > 1 && multiSel.has(dragN)) movNodes([...multiSel], dx / zoom, dy / zoom)
+      else movNode(dragN, dx / zoom, dy / zoom)
+    } else if (panning) {
+      setPan((p) => ({ x: p.x + dx, y: p.y + dy }))
+    }
   }
   const onUp = () => {
     setDragN(null)
@@ -652,6 +823,43 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
 
   return (
     <div ref={viewRef} style={{ width: "100%", height: "100%", position: "relative" }}>
+      {/* Zoom controls */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 44,
+          left: 12,
+          zIndex: 20,
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          background: "rgba(10,10,10,0.85)",
+          border: `1px solid ${C.border}`,
+          borderRadius: 5,
+          padding: "3px 6px",
+          backdropFilter: "blur(4px)",
+        }}
+      >
+        <button
+          type="button"
+          onClick={zoomOut}
+          style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px" }}
+          title="Zoom out (Ctrl/Cmd + scroll)"
+        >−</button>
+        <button
+          type="button"
+          onClick={zoomReset}
+          style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 9, fontFamily: "monospace", padding: "0 2px", minWidth: 30, textAlign: "center" }}
+          title="Reset zoom"
+        >{Math.round(zoom * 100)}%</button>
+        <button
+          type="button"
+          onClick={zoomIn}
+          style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px" }}
+          title="Zoom in (Ctrl/Cmd + scroll)"
+        >+</button>
+      </div>
+
       {/* Jump to root button */}
       <button
         type="button"
@@ -703,6 +911,7 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
       </button>
       <svg
         ref={svgRef}
+        aria-hidden="true"
         style={{
           width: "100%",
           height: "100%",
@@ -757,27 +966,27 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
             arrows.push(
               <Arrow
                 key={`${nd.id}n`}
-                from={getOut(nd, pan)}
-                to={getIn(nodes[nd.nextId], pan)}
+                from={getOut(nd, pan, zoom)}
+                to={getIn(nodes[nd.nextId], pan, zoom)}
                 color={C.accent}
                 onClick={() => unlinkNode(nd.id)}
               />
             )
           }
-          nd.choices.forEach((ch, i) => {
+          for (const [i, ch] of nd.choices.entries()) {
             if (ch.nextId && nodes[ch.nextId]) {
               arrows.push(
                 <Arrow
                   key={ch.id}
-                  from={getChoiceOut(nd, i, nd.choices.length, pan)}
-                  to={getIn(nodes[ch.nextId], pan)}
+                  from={getChoiceOut(nd, i, nd.choices.length, pan, zoom)}
+                  to={getIn(nodes[ch.nextId], pan, zoom)}
                   color={C.warn}
                   label={ch.label}
                   onClick={() => unlinkNode(nd.id, ch.id)}
                 />
               )
             }
-          })
+          }
           return arrows
         })}
 
@@ -786,7 +995,7 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
           (() => {
             const nd = nodes[conn.fromId]
             const idx = conn.choiceId ? nd.choices.findIndex((c) => c.id === conn.choiceId) : -1
-            const from = idx >= 0 ? getChoiceOut(nd, idx, nd.choices.length, pan) : getOut(nd, pan)
+            const from = idx >= 0 ? getChoiceOut(nd, idx, nd.choices.length, pan, zoom) : getOut(nd, pan, zoom)
             return (
               <line
                 x1={from.x}
@@ -803,8 +1012,8 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
 
         {/* Nodes */}
         {nlist.map((nd) => {
-          const nx = nd.x + pan.x,
-            ny = nd.y + pan.y
+          const nx = nd.x * zoom + pan.x,
+            ny = nd.y * zoom + pan.y
           const isSel = nd.id === sel
           const isRoot = nd.id === rootId
           const isTarget = conn && conn.fromId !== nd.id
@@ -817,8 +1026,8 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
               <rect
                 x={nx}
                 y={ny}
-                width={NODE_W}
-                height={NODE_H}
+                width={NODE_W * zoom}
+                height={NODE_H * zoom}
                 rx={5}
                 fill={tag.bg}
                 stroke={isSel ? C.accent : isRoot ? C.success : C.border}
@@ -829,8 +1038,8 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
               <rect
                 x={nx}
                 y={ny}
-                width={3}
-                height={NODE_H}
+                width={3 * zoom}
+                height={NODE_H * zoom}
                 rx={2}
                 fill={isSel ? C.accent : isRoot ? C.success : tag.stripe}
                 style={{ pointerEvents: "none" }}
@@ -983,7 +1192,7 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
           )
         })}
       </svg>
-      <Minimap nodes={nodes} pan={pan} viewW={dims.w} viewH={dims.h} />
+      <Minimap nodes={nodes} pan={pan} viewW={dims.w} viewH={dims.h} onPan={setPan} />
     </div>
   )
 }
@@ -1026,6 +1235,7 @@ function Tooltip({ label, children }) {
 
 const IBtn = ({ style, ...p }) => (
   <button
+    type="button"
     style={{
       background: "none",
       border: "none",
@@ -1171,11 +1381,14 @@ function ScenesPanel({ tree }) {
                     {sc.name}
                   </span>
                 )}
-                <span
-                  style={{ fontSize: 9, color: "#333", fontFamily: "monospace", flexShrink: 0 }}
-                >
-                  {nodeCount}
+                <span style={{ fontSize: 9, color: "#333", fontFamily: "monospace", flexShrink: 0 }}>
+                  {nodeCount}n
                 </span>
+                {(() => {
+                  const scNodes = nodesByScene?.[sc.id]?.nodes ?? {}
+                  const wc = Object.values(scNodes).reduce((acc, nd) => acc + (nd.text?.split(/\s+/).filter(Boolean).length ?? 0), 0)
+                  return wc > 0 ? <span style={{ fontSize: 9, color: "#2a2a4a", fontFamily: "monospace", flexShrink: 0, marginLeft: 3 }}>{wc}w</span> : null
+                })()}
                 {scenes.length > 1 && (
                   <IBtn
                     style={{ fontSize: 13, color: "#333" }}
@@ -1190,6 +1403,24 @@ function ScenesPanel({ tree }) {
               </div>
               {sc.id === activeSceneId && (
                 <div style={{ padding: "0 12px 8px 26px" }}>
+                  <input
+                    value={sc.location || ""}
+                    onChange={(e) => updateScene(sc.id, { location: e.target.value })}
+                    placeholder="Location (e.g. Tavern, Forest…)"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "#0d0d0d",
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 3,
+                      color: C.textDim,
+                      fontSize: 11,
+                      padding: "4px 6px",
+                      outline: "none",
+                      fontFamily: "inherit",
+                      marginBottom: 4,
+                    }}
+                  />
                   <textarea
                     value={sc.description || ""}
                     onChange={(e) => updateScene(sc.id, { description: e.target.value })}
@@ -1254,6 +1485,70 @@ function ScenesPanel({ tree }) {
         </button>
       </div>
     </>
+  )
+}
+
+// ─── Character tags editor ────────────────────────────────────────────────────
+function CharTagsEditor({ tags, onChange }) {
+  const [input, setInput] = useState("")
+  function addTag() {
+    const t = input.trim()
+    if (!t || tags.includes(t)) return
+    onChange([...tags, t])
+    setInput("")
+  }
+  return (
+    <div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: tags.length ? 4 : 0 }}>
+        {tags.map((t) => (
+          <span
+            key={t}
+            style={{
+              background: "#1a1a2e",
+              border: "1px solid #2a2a5a",
+              borderRadius: 3,
+              color: C.textDim,
+              fontSize: 10,
+              padding: "2px 6px",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            {t}
+            <button
+              type="button"
+              onClick={() => onChange(tags.filter((x) => x !== t))}
+              style={{ background: "none", border: "none", color: "#555", cursor: "pointer", padding: 0, fontSize: 11, lineHeight: 1 }}
+            >×</button>
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 4 }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag() } }}
+          placeholder="Add tag (class, race…)"
+          style={{
+            flex: 1,
+            background: "#0d0d0d",
+            border: `1px solid ${C.border}`,
+            borderRadius: 3,
+            color: C.text,
+            fontSize: 11,
+            padding: "4px 6px",
+            outline: "none",
+            fontFamily: "inherit",
+          }}
+        />
+        <button
+          type="button"
+          onClick={addTag}
+          style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 3, color: C.textDim, fontSize: 11, padding: "4px 8px", cursor: "pointer", fontFamily: "monospace" }}
+        >+</button>
+      </div>
+    </div>
   )
 }
 
@@ -1350,6 +1645,23 @@ function CharactersPanel({ tree }) {
                     minHeight: 52,
                   }}
                 />
+                <select
+                  value={ch.gender || ""}
+                  onChange={(e) => updateChar(ch.id, { gender: e.target.value })}
+                  style={{ background: "#0d0d0d", border: `1px solid ${C.border}`, borderRadius: 3, color: ch.gender ? C.text : C.textMuted, fontSize: 11, padding: "4px 6px", outline: "none", fontFamily: "inherit" }}
+                >
+                  <option value="">Gender…</option>
+                  {["Woman","Man","Non-binary","Genderfluid","Agender","Transgender woman","Transgender man","Other","Prefer not to say"].map((g) => <option key={g} value={g}>{g}</option>)}
+                </select>
+                <select
+                  value={ch.orientation || ""}
+                  onChange={(e) => updateChar(ch.id, { orientation: e.target.value })}
+                  style={{ background: "#0d0d0d", border: `1px solid ${C.border}`, borderRadius: 3, color: ch.orientation ? C.text : C.textMuted, fontSize: 11, padding: "4px 6px", outline: "none", fontFamily: "inherit" }}
+                >
+                  <option value="">Orientation…</option>
+                  {["Heterosexual","Gay","Lesbian","Bisexual","Pansexual","Asexual","Demisexual","Queer","Other","Prefer not to say"].map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <CharTagsEditor tags={ch.tags || []} onChange={(tags) => updateChar(ch.id, { tags })} />
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                   {CHAR_COLORS.map((col) => (
                     <div
@@ -1382,6 +1694,7 @@ function CharactersPanel({ tree }) {
       </div>
       <div style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}` }}>
         <button
+          type="button"
           onClick={() => {
             const c = addChar()
             setEditing(c.id)
@@ -1429,6 +1742,7 @@ function VariablesPanel({ tree }) {
                 cursor: "pointer",
               }}
               onClick={() => setEditing(editing === v.id ? null : v.id)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditing(editing === v.id ? null : v.id) } }}
             >
               <span
                 style={{
@@ -1436,7 +1750,7 @@ function VariablesPanel({ tree }) {
                   fontFamily: "monospace",
                   color: typeColor[v.type],
                   background: "#111",
-                  border: `1px solid #1f1f1f`,
+                  border: "1px solid #1f1f1f",
                   borderRadius: 2,
                   padding: "1px 4px",
                 }}
@@ -1486,6 +1800,7 @@ function VariablesPanel({ tree }) {
                 <div style={{ display: "flex", gap: 4 }}>
                   {VAR_TYPES.map((t) => (
                     <button
+                      type="button"
                       key={t}
                       onClick={() =>
                         updateVar(v.id, {
@@ -1513,6 +1828,7 @@ function VariablesPanel({ tree }) {
                   <div style={{ display: "flex", gap: 4 }}>
                     {["true", "false"].map((val) => (
                       <button
+                        type="button"
                         key={val}
                         onClick={() => updateVar(v.id, { defaultValue: val })}
                         style={{
@@ -1572,6 +1888,7 @@ function VariablesPanel({ tree }) {
       </div>
       <div style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}` }}>
         <button
+          type="button"
           onClick={() => {
             const v = addVar()
             setEditing(v.id)
@@ -1596,55 +1913,158 @@ function VariablesPanel({ tree }) {
 }
 
 function ExportPanel({ tree }) {
-  const { exportAll, importAll } = tree
+  const { exportAll, importAll, scenes, nodesByScene, characters, variables } = tree
   const fileRef = useRef(null)
+
+  function download(content, filename, type) {
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(new Blob([content], { type }))
+    a.download = filename
+    a.click()
+  }
+
+  function exportYarnSpinner() {
+    // Yarn Spinner 2 JSON format
+    const nodes = []
+    for (const sc of scenes) {
+      const sd = nodesByScene[sc.id]
+      if (!sd) continue
+      for (const nd of Object.values(sd.nodes)) {
+        const body = []
+        if (nd.text) body.push(nd.text)
+        if (nd.choices?.length) {
+          for (const ch of nd.choices) {
+            body.push(`-> ${ch.label || "Option"}`)
+            if (ch.nextId) body.push(`  <<jump ${ch.nextId}>>`)
+          }
+        } else if (nd.nextId) {
+          body.push(`<<jump ${nd.nextId}>>`)
+        }
+        nodes.push({ title: nd.id, tags: `scene:${sc.id}`, body: body.join("\n") })
+      }
+    }
+    download(JSON.stringify(nodes, null, 2), "dialogue.yarn.json", "application/json")
+  }
+
+  function exportInk() {
+    const lines = []
+    for (const sc of scenes) {
+      const sd = nodesByScene[sc.id]
+      if (!sd) continue
+      lines.push(`=== ${sc.name.replace(/\s+/g, "_")} ===`)
+      const nd = sd.nodes[sd.root]
+      if (!nd) continue
+      function writeNode(node, visited = new Set()) {
+        if (!node || visited.has(node.id)) return
+        visited.add(node.id)
+        lines.push(`= ${node.id}`)
+        if (node.speaker) lines.push(`${node.speaker}: ${node.text || ""}`)
+        else if (node.text) lines.push(node.text)
+        if (node.choices?.length) {
+          for (const ch of node.choices) {
+            lines.push(`+ [${ch.label || "Option"}]`)
+            if (ch.nextId && sd.nodes[ch.nextId]) {
+              lines.push(`  -> ${ch.nextId}`)
+              writeNode(sd.nodes[ch.nextId], visited)
+            } else { lines.push("  -> END") }
+          }
+        } else if (node.nextId && sd.nodes[node.nextId]) {
+          lines.push(`-> ${node.nextId}`)
+          writeNode(sd.nodes[node.nextId], visited)
+        } else { lines.push("-> END") }
+      }
+      writeNode(nd)
+    }
+    download(lines.join("\n"), "dialogue.ink", "text/plain")
+  }
+
+  function exportRenpy() {
+    const lines = ["# Generated by Inkgraph", ""]
+    for (const sc of scenes) {
+      const sd = nodesByScene[sc.id]
+      if (!sd) continue
+      lines.push(`label ${sc.name.replace(/\s+/g, "_").toLowerCase()}:`)
+      const visited = new Set()
+      function writeNode(node) {
+        if (!node || visited.has(node.id)) return
+        visited.add(node.id)
+        lines.push(`    label ${node.id}:`)
+        const char = characters.find((c) => c.id === node.characterId)
+        const spk = char?.name || node.speaker
+        if (spk) lines.push(`        ${spk} "${(node.text || "").replace(/"/g, '\\"')}"`)
+        else if (node.text) lines.push(`        "${node.text.replace(/"/g, '\\"')}"`)
+        if (node.choices?.length) {
+          lines.push("        menu:")
+          for (const ch of node.choices) {
+            lines.push(`            "${ch.label || "Option"}":`)
+            if (ch.nextId) lines.push(`                jump ${ch.nextId}`)
+            else lines.push("                return")
+          }
+        } else if (node.nextId) {
+          lines.push(`        jump ${node.nextId}`)
+          writeNode(sd.nodes[node.nextId])
+        } else { lines.push("        return") }
+      }
+      writeNode(sd.nodes[sd.root])
+      lines.push("")
+    }
+    download(lines.join("\n"), "dialogue.rpy", "text/plain")
+  }
+
+  function exportCSV() {
+    const rows = [["scene_id","scene_name","node_id","speaker","text","choice_1","choice_2","choice_3","choice_4","next_id"]]
+    for (const sc of scenes) {
+      const sd = nodesByScene[sc.id]
+      if (!sd) continue
+      for (const nd of Object.values(sd.nodes)) {
+        const choices = nd.choices?.map((c) => c.label || "") ?? []
+        rows.push([
+          sc.id, sc.name, nd.id,
+          nd.speaker || "",
+          (nd.text || "").replace(/"/g, '""'),
+          choices[0] || "", choices[1] || "", choices[2] || "", choices[3] || "",
+          nd.nextId || "",
+        ].map((v) => `"${v}"`))
+      }
+    }
+    download(rows.map((r) => r.join(",")).join("\n"), "dialogue.csv", "text/csv")
+  }
+
+  const btnStyle = (color, bg, border) => ({
+    background: bg,
+    border: `1px solid ${border}`,
+    color,
+    borderRadius: 4,
+    padding: "7px 12px",
+    cursor: "pointer",
+    fontSize: 11,
+    fontFamily: "monospace",
+    textAlign: "left",
+    width: "100%",
+  })
+
   return (
-    <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-      <button
-        onClick={exportAll}
-        style={{
-          background: "#0a1f0a",
-          border: `1px solid #0f2f0f`,
-          color: C.success,
-          borderRadius: 4,
-          padding: "8px 12px",
-          cursor: "pointer",
-          fontSize: 12,
-          fontFamily: "monospace",
-          textAlign: "left",
-        }}
-      >
-        ↓ Export JSON
-      </button>
-      <button
-        onClick={() => fileRef.current.click()}
-        style={{
-          background: "#0d0d1f",
-          border: `1px solid #1a1a3f`,
-          color: C.accent,
-          borderRadius: 4,
-          padding: "8px 12px",
-          cursor: "pointer",
-          fontSize: 12,
-          fontFamily: "monospace",
-          textAlign: "left",
-        }}
-      >
-        ↑ Import JSON
-      </button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".json"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          if (e.target.files[0]) importAll(e.target.files[0])
-          e.target.value = ""
-        }}
-      />
-      <p style={{ fontSize: 10, color: C.textMuted, lineHeight: 1.7, margin: 0 }}>
-        Saves all scenes, nodes, characters and variables to a single JSON file.
-      </p>
+    <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
+      <div style={{ fontSize: 9, color: C.textMuted, fontFamily: "monospace", letterSpacing: 1, marginBottom: 2 }}>EXPORT</div>
+      <button type="button" onClick={exportAll} style={btnStyle(C.success, "#0a1f0a", "#0f2f0f")}>↓ Inkgraph JSON</button>
+      <button type="button" onClick={exportYarnSpinner} style={btnStyle("#a78bfa", "#0d0d1a", "#2a1a5a")}>↓ Yarn Spinner JSON</button>
+      <button type="button" onClick={exportInk} style={btnStyle("#67e8f9", "#0a1a1f", "#0f3a4a")}>↓ Ink (.ink)</button>
+      <button type="button" onClick={exportRenpy} style={btnStyle("#f9a8d4", "#1f0a14", "#5a1a34")}>↓ Ren'Py (.rpy)</button>
+      <button type="button" onClick={exportCSV} style={btnStyle(C.warn, "#1a140a", "#4a340a")}>↓ CSV (localisation)</button>
+      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 6, marginTop: 2 }}>
+        <div style={{ fontSize: 9, color: C.textMuted, fontFamily: "monospace", letterSpacing: 1, marginBottom: 6 }}>IMPORT</div>
+        <button type="button" onClick={() => fileRef.current.click()} style={btnStyle(C.accent, "#0d0d1f", "#1a1a3f")}>↑ Import JSON</button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files[0]) importAll(e.target.files[0])
+            e.target.value = ""
+          }}
+        />
+      </div>
     </div>
   )
 }
@@ -1854,8 +2274,12 @@ function NodePanel({ node, tree }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 12 }}>
         {Object.entries(TAG_DEFS).map(([k, t]) => (
           <button
+            type="button"
             key={k}
             onClick={() => upd(node.id, { tag: k })}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") upd(node.id, { tag: k }) }}
+            role="button"
+            tabIndex={0}
             style={{
               background: node.tag === k ? t.bg : "#0d0d0d",
               border: `1px solid ${node.tag === k ? t.stripe : C.border}`,
@@ -1876,7 +2300,11 @@ function NodePanel({ node, tree }) {
       <Sec label="CHARACTER" />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 12 }}>
         <button
+          type="button"
           onClick={() => upd(node.id, { characterId: null })}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") upd(node.id, { characterId: null }) }}
+          role="button"
+          tabIndex={0}
           style={{
             background: !node.characterId ? "#1a1a2e" : "#0d0d0d",
             border: `1px solid ${!node.characterId ? C.accent : C.border}`,
@@ -1892,8 +2320,11 @@ function NodePanel({ node, tree }) {
         </button>
         {characters.map((ch) => (
           <button
+            type="button"
             key={ch.id}
             onClick={() => upd(node.id, { characterId: ch.id, speaker: ch.name })}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") upd(node.id, { characterId: ch.id, speaker: ch.name }) }}
+            tabIndex={0}
             style={{
               display: "flex",
               alignItems: "center",
@@ -2320,17 +2751,17 @@ function GuideModal({ onClose }) {
   const renderBlock = (block, i) => {
     if (block.type === "p")
       return (
-        <p key={i} style={{ margin: "0 0 14px 0", fontSize: 13, color: "#aaa", lineHeight: 1.75 }}>
+        <p key={block.text?.slice(0, 30) ?? i} style={{ margin: "0 0 14px 0", fontSize: 13, color: "#aaa", lineHeight: 1.75 }}>
           {block.text}
         </p>
       )
     if (block.type === "callout")
       return (
         <div
-          key={i}
+          key={block.text?.slice(0, 30) ?? i}
           style={{
             background: "#0e0e1e",
-            border: `1px solid #2a2a4a`,
+            border: "1px solid #2a2a4a",
             borderLeft: `3px solid ${C.accent}`,
             borderRadius: 4,
             padding: "10px 14px",
@@ -2346,7 +2777,7 @@ function GuideModal({ onClose }) {
     if (block.type === "steps")
       return (
         <ol
-          key={i}
+          key={block.items?.[0]?.slice(0, 30) ?? i}
           style={{
             margin: "0 0 14px 0",
             paddingLeft: 20,
@@ -2355,8 +2786,8 @@ function GuideModal({ onClose }) {
             gap: 6,
           }}
         >
-          {block.items.map((item, j) => (
-            <li key={j} style={{ fontSize: 13, color: "#aaa", lineHeight: 1.6 }}>
+          {block.items.map((item) => (
+            <li key={item.slice(0, 40)} style={{ fontSize: 13, color: "#aaa", lineHeight: 1.6 }}>
               {item}
             </li>
           ))}
@@ -2365,17 +2796,17 @@ function GuideModal({ onClose }) {
     if (block.type === "table") {
       const [header, ...rows] = block.rows
       return (
-        <div key={i} style={{ overflowX: "auto", marginBottom: 14 }}>
+        <div key={block.rows?.[0]?.[0] ?? i} style={{ overflowX: "auto", marginBottom: 14 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr>
-                {header.map((h, j) => (
+                {header.map((h) => (
                   <th
-                    key={j}
+                    key={h}
                     style={{
                       textAlign: "left",
                       padding: "6px 10px",
-                      borderBottom: `1px solid #2a2a2a`,
+                      borderBottom: "1px solid #2a2a2a",
                       color: C.textMuted,
                       fontFamily: "monospace",
                       fontSize: 10,
@@ -2389,11 +2820,11 @@ function GuideModal({ onClose }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, j) => (
-                <tr key={j} style={{ borderBottom: `1px solid #161616` }}>
-                  {row.map((cell, k) => (
+              {rows.map((row) => (
+                <tr key={row[0]} style={{ borderBottom: "1px solid #161616" }}>
+                  {row.map((cell) => (
                     <td
-                      key={k}
+                      key={cell}
                       style={{
                         padding: "7px 10px",
                         color: k === 0 ? "#ccc" : "#888",
@@ -2465,7 +2896,8 @@ function GuideModal({ onClose }) {
           <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
             {GUIDE_SECTIONS.map((s, i) => (
               <button
-                key={i}
+                type="button"
+                key={s.title}
                 onClick={() => setActive(i)}
                 style={{
                   width: "100%",
@@ -2502,6 +2934,7 @@ function GuideModal({ onClose }) {
           >
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: C.text }}>{sec.title}</h2>
             <button
+              type="button"
               onClick={onClose}
               style={{
                 background: "transparent",
@@ -2529,6 +2962,7 @@ function GuideModal({ onClose }) {
             }}
           >
             <button
+              type="button"
               onClick={() => setActive((a) => Math.max(0, a - 1))}
               disabled={active === 0}
               style={{
@@ -2545,6 +2979,7 @@ function GuideModal({ onClose }) {
               ← Prev
             </button>
             <button
+              type="button"
               onClick={() => setActive((a) => Math.min(GUIDE_SECTIONS.length - 1, a + 1))}
               disabled={active === GUIDE_SECTIONS.length - 1}
               style={{
@@ -2587,7 +3022,7 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
         style={{
           width: "min(420px,92vw)",
           background: "#0f0f0f",
-          border: `1px solid #2a2a2a`,
+          border: "1px solid #2a2a2a",
           borderRadius: 8,
           overflow: "hidden",
           boxShadow: "0 32px 80px rgba(0,0,0,0.9)",
@@ -2602,14 +3037,15 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
                 height: 36,
                 borderRadius: 8,
                 background: "#141422",
-                border: `1px solid #2a2a4a`,
+                border: "1px solid #2a2a4a",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
               }}
             >
-              <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+              <svg
+      aria-hidden="true" width="18" height="18" fill="none" viewBox="0 0 24 24">
                 <path
                   d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2Z"
                   stroke={C.accent}
@@ -2654,6 +3090,7 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
           </p>
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             <button
+              type="button"
               onClick={onLogin}
               style={{
                 flex: 1,
@@ -2671,11 +3108,12 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
               Sign in
             </button>
             <button
+              type="button"
               onClick={onRegister}
               style={{
                 flex: 1,
                 background: "transparent",
-                border: `1px solid #3a3a6a`,
+                border: "1px solid #3a3a6a",
                 borderRadius: 5,
                 color: "#a0a0e0",
                 fontSize: 13,
@@ -2689,6 +3127,7 @@ function LocalStorageNotice({ onClose, onLogin, onRegister }) {
             </button>
           </div>
           <button
+            type="button"
             onClick={onClose}
             style={{
               width: "100%",
@@ -2726,7 +3165,7 @@ function ProfileModal({ onClose }) {
     width: "100%",
     boxSizing: "border-box",
     background: "#0d0d0d",
-    border: `1px solid #2a2a2a`,
+    border: "1px solid #2a2a2a",
     borderRadius: 5,
     color: C.text,
     fontSize: 14,
@@ -2769,6 +3208,7 @@ function ProfileModal({ onClose }) {
       >
         {section !== "main" ? (
           <button
+            type="button"
             onClick={() => setSection("main")}
             style={{
               background: "none",
@@ -2783,7 +3223,8 @@ function ProfileModal({ onClose }) {
               fontFamily: "inherit",
             }}
           >
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+            <svg
+      aria-hidden="true" width="16" height="16" fill="none" viewBox="0 0 24 24">
               <path
                 d="M19 12H5M5 12l7-7M5 12l7 7"
                 stroke="currentColor"
@@ -2799,6 +3240,7 @@ function ProfileModal({ onClose }) {
         )}
         <div style={{ flex: 1 }} />
         <button
+          type="button"
           onClick={onClose}
           style={{
             background: "none",
@@ -2813,7 +3255,8 @@ function ProfileModal({ onClose }) {
             borderRadius: 6,
           }}
         >
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+          <svg
+      aria-hidden="true" width="16" height="16" fill="none" viewBox="0 0 24 24">
             <path
               d="M18 6 6 18M6 6l12 12"
               stroke="currentColor"
@@ -2868,8 +3311,9 @@ function ProfileModal({ onClose }) {
 
               {/* Username field (read-only) */}
               <div style={{ marginBottom: 20 }}>
-                <label style={labelStyle}>USERNAME</label>
+                <label htmlFor="profile-username" style={labelStyle}>USERNAME</label>
                 <input
+                  id="profile-username"
                   readOnly
                   value="username"
                   style={{ ...inputStyle, color: C.textMuted, cursor: "default" }}
@@ -2878,8 +3322,9 @@ function ProfileModal({ onClose }) {
 
               {/* Email field (read-only) */}
               <div style={{ marginBottom: 32 }}>
-                <label style={labelStyle}>EMAIL</label>
+                <label htmlFor="profile-email" style={labelStyle}>EMAIL</label>
                 <input
+                  id="profile-email"
                   readOnly
                   value="user@example.com"
                   style={{ ...inputStyle, color: C.textMuted, cursor: "default" }}
@@ -2888,6 +3333,7 @@ function ProfileModal({ onClose }) {
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <button
+                  type="button"
                   onClick={() => setSection("password")}
                   style={{
                     width: "100%",
@@ -2905,7 +3351,8 @@ function ProfileModal({ onClose }) {
                     gap: 10,
                   }}
                 >
-                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+                  <svg
+      aria-hidden="true" width="16" height="16" fill="none" viewBox="0 0 24 24">
                     <rect
                       x="3"
                       y="11"
@@ -2924,6 +3371,7 @@ function ProfileModal({ onClose }) {
                   </svg>
                   Change password
                   <svg
+                    aria-hidden="true"
                     style={{ marginLeft: "auto" }}
                     width="14"
                     height="14"
@@ -2959,7 +3407,8 @@ function ProfileModal({ onClose }) {
                     gap: 10,
                   }}
                 >
-                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+                  <svg
+      aria-hidden="true" width="16" height="16" fill="none" viewBox="0 0 24 24">
                     <path
                       d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"
                       stroke="currentColor"
@@ -2970,6 +3419,7 @@ function ProfileModal({ onClose }) {
                   </svg>
                   Delete account
                   <svg
+      aria-hidden="true"
                     style={{ marginLeft: "auto" }}
                     width="14"
                     height="14"
@@ -3000,24 +3450,25 @@ function ProfileModal({ onClose }) {
               </p>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>CURRENT PASSWORD</label>
-                <input type="password" placeholder="••••••••" style={inputStyle} />
+                <label htmlFor="profile-cur-pw" style={labelStyle}>CURRENT PASSWORD</label>
+                <input id="profile-cur-pw" type="password" placeholder="••••••••" style={inputStyle} />
               </div>
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>NEW PASSWORD</label>
-                <input type="password" placeholder="••••••••" style={inputStyle} />
+                <label htmlFor="profile-new-pw" style={labelStyle}>NEW PASSWORD</label>
+                <input id="profile-new-pw" type="password" placeholder="••••••••" style={inputStyle} />
               </div>
               <div style={{ marginBottom: 32 }}>
-                <label style={labelStyle}>CONFIRM NEW PASSWORD</label>
-                <input type="password" placeholder="••••••••" style={inputStyle} />
+                <label htmlFor="profile-confirm-pw" style={labelStyle}>CONFIRM NEW PASSWORD</label>
+                <input id="profile-confirm-pw" type="password" placeholder="••••••••" style={inputStyle} />
               </div>
 
               <button
+                type="button"
                 disabled
                 style={{
                   width: "100%",
                   background: "#1a1a2e",
-                  border: `1px solid #3a3a6a`,
+                  border: "1px solid #3a3a6a",
                   borderRadius: 6,
                   color: "#6a6aaa",
                   fontSize: 13,
@@ -3057,7 +3508,7 @@ function ProfileModal({ onClose }) {
               <div
                 style={{
                   background: "#1a0a0a",
-                  border: `1px solid #3a1010`,
+                  border: "1px solid #3a1010",
                   borderRadius: 6,
                   padding: "14px 16px",
                   marginBottom: 28,
@@ -3080,16 +3531,17 @@ function ProfileModal({ onClose }) {
               </div>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>TYPE YOUR USERNAME TO CONFIRM</label>
-                <input placeholder="username" style={{ ...inputStyle, borderColor: "#3a1010" }} />
+                <label htmlFor="profile-del-confirm" style={labelStyle}>TYPE YOUR USERNAME TO CONFIRM</label>
+                <input id="profile-del-confirm" placeholder="username" style={{ ...inputStyle, borderColor: "#3a1010" }} />
               </div>
 
               <button
+                type="button"
                 disabled
                 style={{
                   width: "100%",
                   background: "#1a0a0a",
-                  border: `1px solid #3a1010`,
+                  border: "1px solid #3a1010",
                   borderRadius: 6,
                   color: "#774444",
                   fontSize: 13,
@@ -3126,7 +3578,8 @@ const PANELS = [
     id: "scenes",
     label: "Scenes",
     icon: (
-      <svg width="15" height="15" fill="none" viewBox="0 0 24 24">
+      <svg
+      aria-hidden="true" width="15" height="15" fill="none" viewBox="0 0 24 24">
         <rect x="3" y="3" width="18" height="4" rx="1" stroke="currentColor" strokeWidth="1.5" />
         <rect x="3" y="10" width="18" height="4" rx="1" stroke="currentColor" strokeWidth="1.5" />
         <rect x="3" y="17" width="18" height="4" rx="1" stroke="currentColor" strokeWidth="1.5" />
@@ -3137,7 +3590,8 @@ const PANELS = [
     id: "characters",
     label: "Characters",
     icon: (
-      <svg width="15" height="15" fill="none" viewBox="0 0 24 24">
+      <svg
+      aria-hidden="true" width="15" height="15" fill="none" viewBox="0 0 24 24">
         <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="1.5" />
         <path
           d="M2 21c0-4 3-7 7-7s7 3 7 7"
@@ -3153,7 +3607,8 @@ const PANELS = [
     id: "variables",
     label: "Variables & Flags",
     icon: (
-      <svg width="15" height="15" fill="none" viewBox="0 0 24 24">
+      <svg
+      aria-hidden="true" width="15" height="15" fill="none" viewBox="0 0 24 24">
         <path
           d="M4 6h16M4 12h10M4 18h6"
           stroke="currentColor"
@@ -3168,7 +3623,8 @@ const PANELS = [
     id: "export",
     label: "Export / Import",
     icon: (
-      <svg width="15" height="15" fill="none" viewBox="0 0 24 24">
+      <svg
+      aria-hidden="true" width="15" height="15" fill="none" viewBox="0 0 24 24">
         <path
           d="M12 3v10m0 0-3-3m3 3 3-3"
           stroke="currentColor"
@@ -3188,10 +3644,14 @@ const PANELS = [
 const HOTKEYS = [
   ["N", "New node (fills first empty choice, then nextId)"],
   ["C", "Add choice to node"],
+  ["D", "Duplicate selected node"],
+  ["Ctrl+F", "Search nodes"],
   ["Z", "Undo last change"],
   ["Home", "Jump to root node"],
+  ["Cmd/Ctrl+click", "Multi-select nodes"],
   ["Del", "Delete selected node"],
   ["← → ↑ ↓", "Nudge node"],
+  ["Ctrl+scroll", "Zoom in/out"],
   ["Tab", "Cycle nodes"],
   ["?", "Help"],
 ]
@@ -3209,6 +3669,7 @@ export {
   restore,
   useTree,
   Canvas,
+  NodeSearchPalette,
   Tooltip,
   IBtn,
   SmBtn,

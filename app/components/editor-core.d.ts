@@ -72,12 +72,18 @@ export interface Scene {
   id: string
   name: string
   description: string
+  /** Optional location label e.g. "Tavern", "Forest". */
+  location?: string
 }
 
 export interface Character {
   id: string
   name: string
   color: string
+  description?: string
+  gender?: string
+  orientation?: string
+  tags?: string[]
 }
 
 export interface Variable {
@@ -107,6 +113,11 @@ export interface TreeState {
   updChoice: (nodeId: string, choiceId: string, patch: Partial<Choice>) => void
   delNode: (id: string) => void
   movNode: (id: string, dx: number, dy: number) => void
+  movNodes: (ids: string[], dx: number, dy: number) => void
+  duplicateNode: (id: string) => void
+  multiSel: Set<string>
+  toggleMultiSel: (id: string) => void
+  clearMultiSel: () => void
   linkNodes: (fromId: string, toId: string) => void
   unlinkNode: (fromId: string) => void
   scenes: Scene[]
@@ -193,6 +204,12 @@ export declare function EffRow(props: {
 export declare function NodePanel(props: {
   node: Node | undefined
   tree: TreeState
+}): JSX.Element
+
+export declare function NodeSearchPalette(props: {
+  nodes: Record<string, Node>
+  onSelect: (id: string) => void
+  onClose: () => void
 }): JSX.Element
 
 export declare function GuideModal(props: { onClose: () => void }): JSX.Element
