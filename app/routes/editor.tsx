@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router"
-import { ToastContainer, useToast } from "../components/Toast"
+import { ToastContainer, useToast } from "../components/toast"
 import {
   C,
   Canvas,
@@ -289,7 +289,6 @@ export default function EditorRoute() {
   })()
   const tree = useTree(initialData)
   const { nodes, sel, setSel, addNode, addNodeSmart, addChoice, delNode, movNode, rootId, undo } = tree
-
   const [projectName, setProjectName] = useState(() => {
     if (project?.name) return project.name
     // Guest: name was stored in localStorage when the project was opened
@@ -298,7 +297,8 @@ export default function EditorRoute() {
     }
     return "Untitled"
   })
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
+  const [saveStatus, setSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved">("idle")
+  const lastSavedDataRef = useRef<string>("")
   const [showHelp, setShowHelp] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const [expanded, setExpanded] = useState(true)
@@ -307,14 +307,112 @@ export default function EditorRoute() {
   const [isMobile, setIsMobile] = useState(false)
   const viewRef = useRef<HTMLDivElement>(null)
 
+  // ── localStorage-first save system ────────────────────────────────────────
+  // Keys:
+  //   vn2-scenes / vn2-nbs / vn2-chars / vn2-vars  — live tree (written by useTree on every change)
+  //   vn2-project-name                              — project name
+  //   inkgraph-guest-projects                       — guest project list (includes data)
+  //   vn2-pending-{projectId}                       — logged-in: unsync'd snapshot waiting for DB
+
+  const PENDING_KEY = project ? `vn2-pending-${project.id}` : null
+
+  // Initialise lastSavedDataRef — the DB-synced snapshot for logged-in,
+  // or the last localStorage write for guests
+  if (!lastSavedDataRef.current && initialData) {
+    lastSavedDataRef.current = JSON.stringify({
+      scenes: initialData.scenes ?? [],
+      nodesByScene: initialData.nodesByScene ?? {},
+      characters: initialData.characters ?? [],
+      variables: initialData.variables ?? [],
+    })
+  }
+
+  // Current serialised tree — recomputed every render
+  const currentDataStr = JSON.stringify({
+    scenes: tree.scenes,
+    nodesByScene: tree.nodesByScene ?? {},
+    characters: tree.characters,
+    variables: tree.variables,
+  })
+
+  // ── On mount: check for pending unsync'd data (logged-in only) ─────────────
+  useEffect(() => {
+    if (!project || !PENDING_KEY) return
+    const pending = localStorage.getItem(PENDING_KEY)
+    if (!pending) return
+    // Unsync'd data found from a previous session — push to DB silently
+    try {
+      const snap = JSON.parse(pending) as { data: string; name: string; ts: number }
+      const form = new FormData()
+      form.set("intent", "autosave")
+      form.set("id", project.id)
+      form.set("name", snap.name ?? projectName)
+      form.set("description", project.description ?? "")
+      form.set("data", snap.data)
+      fetcher.submit(form, { method: "post" })
+      showToast("Syncing unsaved changes from your last session…", "loading")
+    } catch { /* corrupted — ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     setIsMobile(window.innerWidth < 700)
-    function check() {
-      setIsMobile(window.innerWidth < 700)
-    }
+    function check() { setIsMobile(window.innerWidth < 700) }
     window.addEventListener("resize", check)
     return () => window.removeEventListener("resize", check)
   }, [])
+
+  // Mark dirty when tree data changes
+  useEffect(() => {
+    if (lastSavedDataRef.current && currentDataStr !== lastSavedDataRef.current) {
+      setSaveStatus((s) => (s === "saving" ? s : "dirty"))
+    }
+  }, [currentDataStr])
+
+  // ── Write to localStorage on every tree change (both guest and logged-in) ──
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    // Always keep vn2-project-name current
+    localStorage.setItem("vn2-project-name", projectName)
+
+    if (!project) {
+      // Guest: also update inkgraph-guest-projects entry
+      try {
+        const GUEST_KEY = "inkgraph-guest-projects"
+        const stored = JSON.parse(localStorage.getItem(GUEST_KEY) ?? "[]") as Array<{
+          id: string; name: string; data: string; lastOpenedAt: number; updatedAt: number;
+          userId: string; description: string; createdAt: number
+        }>
+        const now = Math.floor(Date.now() / 1000)
+        const sorted = [...stored].sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))
+        if (sorted.length > 0) {
+          const updated = stored.map((p) =>
+            p.id === sorted[0].id
+              ? { ...p, name: projectName, data: currentDataStr, updatedAt: now }
+              : p
+          )
+          localStorage.setItem(GUEST_KEY, JSON.stringify(updated))
+        }
+      } catch { /* noop */ }
+      // Guest has no DB — mark as saved immediately
+      lastSavedDataRef.current = currentDataStr
+      setSaveStatus("saved")
+      const t = setTimeout(() => setSaveStatus("idle"), 1500)
+      return () => clearTimeout(t)
+    }
+
+    // Logged-in: write pending snapshot so a hard close won't lose data
+    if (PENDING_KEY) {
+      try {
+        localStorage.setItem(PENDING_KEY, JSON.stringify({
+          data: currentDataStr,
+          name: projectName,
+          ts: Date.now(),
+        }))
+      } catch { /* noop */ }
+    }
+  }, [currentDataStr, projectName])
 
   const prevSel = useRef<string | null>(null)
   useEffect(() => {
@@ -322,38 +420,24 @@ export default function EditorRoute() {
     prevSel.current = sel
   }, [sel, isMobile])
 
+  // ── doSave: for logged-in users, syncs pending localStorage data to DB ──────
   function doSave() {
-    const data = {
-      scenes: tree.scenes,
-      nodesByScene: tree.nodesByScene ?? {},
-      characters: tree.characters,
-      variables: tree.variables,
-    }
-    if (!project) {
-      // Guest: persist name to localStorage so it survives navigation
-      if (typeof window !== "undefined") {
-        localStorage.setItem("vn2-project-name", projectName)
-      }
-      return
-    }
+    if (!project) return // guests are already saved continuously above
     const form = new FormData()
     form.set("intent", "autosave")
     form.set("id", project.id)
     form.set("name", projectName)
     form.set("description", project.description ?? "")
-    form.set("data", JSON.stringify(data))
+    form.set("data", currentDataStr)
+    lastSavedDataRef.current = currentDataStr
     fetcher.submit(form, { method: "post" })
     setSaveStatus("saving")
   }
 
-  // Rename-only save — fires immediately on name input blur without waiting for full autosave
+  // Rename-only save
   function doRenameSave() {
-    if (!project) {
-      if (typeof window !== "undefined") {
-        localStorage.setItem("vn2-project-name", projectName)
-      }
-      return
-    }
+    localStorage.setItem("vn2-project-name", projectName)
+    if (!project) return
     const form = new FormData()
     form.set("intent", "rename")
     form.set("id", project.id)
@@ -361,28 +445,36 @@ export default function EditorRoute() {
     fetcher.submit(form, { method: "post" })
   }
 
-  // Auto-save every 30 seconds when a project is open
-  // doSave reads projectName/tree via closure — wrap in ref to avoid stale deps
+  // Auto-sync to DB every 60s for logged-in users (localStorage is the real-time backup)
   const doSaveRef = useRef(doSave)
+  useEffect(() => { doSaveRef.current = doSave })
   useEffect(() => {
-    doSaveRef.current = doSave
-  })
-  useEffect(() => {
-    const interval = setInterval(() => {
-      doSaveRef.current()
-    }, 30_000)
+    if (!project) return // guests don't need DB sync
+    const interval = setInterval(() => { doSaveRef.current() }, 60_000)
     return () => clearInterval(interval)
   }, [project?.id ?? null])
 
-  // Handle save results
+  // Warn on hard close if pending DB sync
+  useEffect(() => {
+    function onUnload(e: BeforeUnloadEvent) {
+      if (project && saveStatus === "dirty") {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener("beforeunload", onUnload)
+    return () => window.removeEventListener("beforeunload", onUnload)
+  }, [project, saveStatus])
+
+  // Handle DB save results — clear pending key on success
   useEffect(() => {
     if (!fetcher.data) return
     if ("ok" in fetcher.data && fetcher.data.ok) {
+      if (PENDING_KEY) localStorage.removeItem(PENDING_KEY)
       setSaveStatus("saved")
       setTimeout(() => setSaveStatus("idle"), 2000)
     } else if ("error" in fetcher.data && fetcher.data.error) {
       setSaveStatus("idle")
-      showToast(`Could not save: ${fetcher.data.error}`, "error")
+      showToast(`Could not sync to server: ${fetcher.data.error}`, "error")
     }
   }, [fetcher.data])
 
@@ -909,7 +1001,13 @@ export default function EditorRoute() {
       >
         <button
           type="button"
-          onClick={() => navigate("/projects")}
+          onClick={() => {
+            if (project && saveStatus === "dirty") {
+              // Logged-in with unsynced data — confirm before leaving
+              if (!window.confirm("You have changes not synced to the server. Leave anyway? (Your work is saved locally and will sync next time you open this project.)")) return
+            }
+            navigate("/projects")
+          }}
           style={{
             background: "transparent",
             border: "none",
@@ -956,12 +1054,53 @@ export default function EditorRoute() {
           placeholder="Untitled"
         />
         <div style={{ flex: 1 }} />
-        {saveStatus === "saving" && (
-          <span style={{ fontSize: 10, color: C.textMuted, fontFamily: "monospace" }}>Saving…</span>
-        )}
-        {saveStatus === "saved" && (
-          <span style={{ fontSize: 10, color: C.success, fontFamily: "monospace" }}>✓ Saved</span>
-        )}
+        <button
+          type="button"
+          onClick={doSave}
+          disabled={!project || saveStatus === "saving" || saveStatus === "saved" || saveStatus === "idle"}
+          title={!project ? "Saved to local storage" : saveStatus === "dirty" ? "Click to sync to server" : saveStatus === "saving" ? "Syncing…" : "Synced to server"}
+          style={{
+            background: saveStatus === "saved"
+              ? "#0a2a0a"
+              : saveStatus === "dirty"
+              ? C.accent
+              : "transparent",
+            border: `1px solid ${saveStatus === "saved" ? C.success : saveStatus === "dirty" ? C.accent : C.border}`,
+            borderRadius: 5,
+            color: saveStatus === "saved" ? C.success : saveStatus === "dirty" ? "#fff" : C.textMuted,
+            fontSize: 11,
+            fontWeight: 700,
+            padding: "5px 12px",
+            cursor: saveStatus === "dirty" ? "pointer" : "default",
+            fontFamily: "monospace",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            transition: "all 0.15s ease",
+            opacity: saveStatus === "saving" ? 0.6 : 1,
+            boxShadow: saveStatus === "saved" ? "0 0 8px rgba(34,197,94,0.25)" : saveStatus === "dirty" ? "0 0 8px rgba(99,102,241,0.3)" : "none",
+          }}
+        >
+          {saveStatus === "saved" ? (
+            <>
+              <svg width="11" height="11" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Saved
+            </>
+          ) : saveStatus === "saving" ? (
+            "Saving…"
+          ) : saveStatus === "dirty" ? (
+            "Save"
+          ) : (
+            <>
+              <svg width="11" height="11" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Saved
+            </>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => navigate("/simulator")}
@@ -985,12 +1124,12 @@ export default function EditorRoute() {
         </button>
         <button
           type="button"
-          onClick={() => navigate("/account")}
+          onClick={() => navigate(user ? "/account" : "/login?from=/editor")}
           style={{
-            background: `linear-gradient(135deg,${C.accent},#a855f7)`,
-            border: "none",
+            background: user ? `linear-gradient(135deg,${C.accent},#a855f7)` : "transparent",
+            border: user ? "none" : `1px solid ${C.border}`,
             borderRadius: 4,
-            color: "#fff",
+            color: user ? "#fff" : C.textMuted,
             fontSize: 11,
             fontWeight: 700,
             padding: "4px 10px",
@@ -999,7 +1138,7 @@ export default function EditorRoute() {
             letterSpacing: 0.3,
           }}
         >
-          {user ? user.name.split(" ")[0] : "Guest"}
+          {user ? user.name.split(" ")[0] : "Sign in"}
         </button>
       </div>
 
