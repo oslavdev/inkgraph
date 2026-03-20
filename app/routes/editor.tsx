@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router"
-import { ToastContainer, useToast } from "../components/toast"
 import {
   C,
   Canvas,
@@ -16,6 +15,7 @@ import {
   VariablesPanel,
   useTree,
 } from "../components/editor-core"
+import { ToastContainer, useToast } from "../components/toast"
 import {
   getLastOpenedProject,
   getProject,
@@ -27,7 +27,10 @@ import { getSession } from "../server/session.server"
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
-export async function loader({ request, params }: { request: Request; params: Record<string, string | undefined> }) {
+export async function loader({
+  request,
+  params,
+}: { request: Request; params: Record<string, string | undefined> }) {
   const session = await getSession(request)
 
   // Guest mode — allow through, project data comes from localStorage
@@ -51,12 +54,15 @@ export async function loader({ request, params }: { request: Request; params: Re
   if (last) {
     throw redirect(`/editor/${last.id}`)
   }
-  throw redirect('/projects')
+  throw redirect("/projects")
 }
 
 // ─── Action — auto-save ───────────────────────────────────────────────────────
 
-export async function action({ request, params }: { request: Request; params: Record<string, string | undefined> }) {
+export async function action({
+  request,
+  params,
+}: { request: Request; params: Record<string, string | undefined> }) {
   const session = await getSession(request)
   if (!session) return { ok: false, error: "Not authenticated" }
   const user = session.user
@@ -285,10 +291,15 @@ export default function EditorRoute() {
 
   // tree must be declared before any hook that references it
   const initialData = (() => {
-    try { return project ? JSON.parse(project.data) : null } catch { return null }
+    try {
+      return project ? JSON.parse(project.data) : null
+    } catch {
+      return null
+    }
   })()
   const tree = useTree(initialData)
-  const { nodes, sel, setSel, addNode, addNodeSmart, addChoice, delNode, movNode, rootId, undo } = tree
+  const { nodes, sel, setSel, addNode, addNodeSmart, addChoice, delNode, movNode, rootId, undo } =
+    tree
   const [projectName, setProjectName] = useState(() => {
     if (project?.name) return project.name
     // Guest: name was stored in localStorage when the project was opened
@@ -351,13 +362,17 @@ export default function EditorRoute() {
       form.set("data", snap.data)
       fetcher.submit(form, { method: "post" })
       showToast("Syncing unsaved changes from your last session…", "loading")
-    } catch { /* corrupted — ignore */ }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    } catch {
+      /* corrupted — ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     setIsMobile(window.innerWidth < 700)
-    function check() { setIsMobile(window.innerWidth < 700) }
+    function check() {
+      setIsMobile(window.innerWidth < 700)
+    }
     window.addEventListener("resize", check)
     return () => window.removeEventListener("resize", check)
   }, [])
@@ -381,8 +396,14 @@ export default function EditorRoute() {
       try {
         const GUEST_KEY = "inkgraph-guest-projects"
         const stored = JSON.parse(localStorage.getItem(GUEST_KEY) ?? "[]") as Array<{
-          id: string; name: string; data: string; lastOpenedAt: number; updatedAt: number;
-          userId: string; description: string; createdAt: number
+          id: string
+          name: string
+          data: string
+          lastOpenedAt: number
+          updatedAt: number
+          userId: string
+          description: string
+          createdAt: number
         }>
         const now = Math.floor(Date.now() / 1000)
         const sorted = [...stored].sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))
@@ -394,7 +415,9 @@ export default function EditorRoute() {
           )
           localStorage.setItem(GUEST_KEY, JSON.stringify(updated))
         }
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
       // Guest has no DB — mark as saved immediately
       lastSavedDataRef.current = currentDataStr
       setSaveStatus("saved")
@@ -405,12 +428,17 @@ export default function EditorRoute() {
     // Logged-in: write pending snapshot so a hard close won't lose data
     if (PENDING_KEY) {
       try {
-        localStorage.setItem(PENDING_KEY, JSON.stringify({
-          data: currentDataStr,
-          name: projectName,
-          ts: Date.now(),
-        }))
-      } catch { /* noop */ }
+        localStorage.setItem(
+          PENDING_KEY,
+          JSON.stringify({
+            data: currentDataStr,
+            name: projectName,
+            ts: Date.now(),
+          })
+        )
+      } catch {
+        /* noop */
+      }
     }
   }, [currentDataStr, projectName])
 
@@ -447,10 +475,14 @@ export default function EditorRoute() {
 
   // Auto-sync to DB every 60s for logged-in users (localStorage is the real-time backup)
   const doSaveRef = useRef(doSave)
-  useEffect(() => { doSaveRef.current = doSave })
+  useEffect(() => {
+    doSaveRef.current = doSave
+  })
   useEffect(() => {
     if (!project) return // guests don't need DB sync
-    const interval = setInterval(() => { doSaveRef.current() }, 60_000)
+    const interval = setInterval(() => {
+      doSaveRef.current()
+    }, 60_000)
     return () => clearInterval(interval)
   }, [project?.id ?? null])
 
@@ -1004,7 +1036,12 @@ export default function EditorRoute() {
           onClick={() => {
             if (project && saveStatus === "dirty") {
               // Logged-in with unsynced data — confirm before leaving
-              if (!window.confirm("You have changes not synced to the server. Leave anyway? (Your work is saved locally and will sync next time you open this project.)")) return
+              if (
+                !window.confirm(
+                  "You have changes not synced to the server. Leave anyway? (Your work is saved locally and will sync next time you open this project.)"
+                )
+              )
+                return
             }
             navigate("/projects")
           }}
@@ -1057,17 +1094,29 @@ export default function EditorRoute() {
         <button
           type="button"
           onClick={doSave}
-          disabled={!project || saveStatus === "saving" || saveStatus === "saved" || saveStatus === "idle"}
-          title={!project ? "Saved to local storage" : saveStatus === "dirty" ? "Click to sync to server" : saveStatus === "saving" ? "Syncing…" : "Synced to server"}
-          style={{
-            background: saveStatus === "saved"
-              ? "#0a2a0a"
+          disabled={
+            !project || saveStatus === "saving" || saveStatus === "saved" || saveStatus === "idle"
+          }
+          title={
+            !project
+              ? "Saved to local storage"
               : saveStatus === "dirty"
-              ? C.accent
-              : "transparent",
+                ? "Click to sync to server"
+                : saveStatus === "saving"
+                  ? "Syncing…"
+                  : "Synced to server"
+          }
+          style={{
+            background:
+              saveStatus === "saved"
+                ? "#0a2a0a"
+                : saveStatus === "dirty"
+                  ? C.accent
+                  : "transparent",
             border: `1px solid ${saveStatus === "saved" ? C.success : saveStatus === "dirty" ? C.accent : C.border}`,
             borderRadius: 5,
-            color: saveStatus === "saved" ? C.success : saveStatus === "dirty" ? "#fff" : C.textMuted,
+            color:
+              saveStatus === "saved" ? C.success : saveStatus === "dirty" ? "#fff" : C.textMuted,
             fontSize: 11,
             fontWeight: 700,
             padding: "5px 12px",
@@ -1078,13 +1127,24 @@ export default function EditorRoute() {
             gap: 6,
             transition: "all 0.15s ease",
             opacity: saveStatus === "saving" ? 0.6 : 1,
-            boxShadow: saveStatus === "saved" ? "0 0 8px rgba(34,197,94,0.25)" : saveStatus === "dirty" ? "0 0 8px rgba(99,102,241,0.3)" : "none",
+            boxShadow:
+              saveStatus === "saved"
+                ? "0 0 8px rgba(34,197,94,0.25)"
+                : saveStatus === "dirty"
+                  ? "0 0 8px rgba(99,102,241,0.3)"
+                  : "none",
           }}
         >
           {saveStatus === "saved" ? (
             <>
               <svg width="11" height="11" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path
+                  d="M20 6L9 17l-5-5"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
               Saved
             </>
@@ -1095,7 +1155,13 @@ export default function EditorRoute() {
           ) : (
             <>
               <svg width="11" height="11" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path
+                  d="M20 6L9 17l-5-5"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
               Saved
             </>
@@ -1413,7 +1479,6 @@ export default function EditorRoute() {
                 padding: "3px 9px",
                 cursor: "pointer",
                 fontFamily: "monospace",
-                title: "Undo (Z)",
               }}
               onClick={undo}
               title="Undo (Z)"

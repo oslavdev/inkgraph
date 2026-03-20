@@ -42,12 +42,15 @@ type Pages = {
       "*": string;
     };
   };
+  "/api/migrate-guest-projects": {
+    params: {};
+  };
 };
 
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/projects" | "/editor" | "/editor/:projectId" | "/login" | "/reset-password" | "/account" | "/simulator" | "/api/auth/*";
+    page: "/" | "/projects" | "/editor" | "/editor/:projectId" | "/login" | "/reset-password" | "/account" | "/simulator" | "/api/auth/*" | "/api/migrate-guest-projects";
   };
   "routes/home.tsx": {
     id: "routes/home";
@@ -84,6 +87,10 @@ type RouteFiles = {
     id: "routes/api.auth.$";
     page: "/api/auth/*";
   };
+  "routes/api.migrate-guest-projects.ts": {
+    id: "routes/api.migrate-guest-projects";
+    page: "/api/migrate-guest-projects";
+  };
 };
 
 type RouteModules = {
@@ -97,4 +104,5 @@ type RouteModules = {
   "routes/account": typeof import("./app/routes/account.tsx");
   "routes/simulator": typeof import("./app/routes/simulator.tsx");
   "routes/api.auth.$": typeof import("./app/routes/api.auth.$.ts");
+  "routes/api.migrate-guest-projects": typeof import("./app/routes/api.migrate-guest-projects.ts");
 };

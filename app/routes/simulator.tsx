@@ -89,11 +89,7 @@ function Silhouette({ color = "#444", size = 80 }: { color?: string; size?: numb
       style={{ flexShrink: 0 }}
     >
       <circle cx="40" cy="22" r="13" fill={color} opacity="0.7" />
-      <path
-        d="M14 72c0-14.36 11.64-26 26-26h0c14.36 0 26 11.64 26 26"
-        fill={color}
-        opacity="0.7"
-      />
+      <path d="M14 72c0-14.36 11.64-26 26-26h0c14.36 0 26 11.64 26 26" fill={color} opacity="0.7" />
     </svg>
   )
 }
@@ -144,7 +140,15 @@ function TypewriterText({
   }
 
   return (
-    <div onClick={!done ? skip : undefined} style={{ cursor: done ? "default" : "pointer" }}>
+    <div
+      onClick={!done ? skip : undefined}
+      onKeyDown={(e) => {
+        if (!done && (e.key === "Enter" || e.key === " ")) {
+          skip()
+        }
+      }}
+      style={{ cursor: done ? "default" : "pointer" }}
+    >
       <span style={{ whiteSpace: "pre-wrap", lineHeight: 1.8 }}>{displayed}</span>
       {!done && (
         <span
@@ -191,9 +195,9 @@ export default function SimulatorPage() {
   const scenes = projectData?.scenes ?? []
   const characters = projectData?.characters ?? []
   const sceneData: SceneData | null =
-    projectData && selectedSceneId ? projectData.nodesByScene[selectedSceneId] ?? null : null
+    projectData && selectedSceneId ? (projectData.nodesByScene[selectedSceneId] ?? null) : null
   const nodes = sceneData?.nodes ?? {}
-  const currentNode: Node | null = currentNodeId ? nodes[currentNodeId] ?? null : null
+  const currentNode: Node | null = currentNodeId ? (nodes[currentNodeId] ?? null) : null
 
   function getCharacter(id: string | null): Character | undefined {
     return characters.find((c) => c.id === id)
@@ -282,7 +286,7 @@ export default function SimulatorPage() {
           flexDirection: "column",
         }}
       >
-        <style>{`@keyframes blink { 50% { opacity: 0 } }`}</style>
+        <style>{"@keyframes blink { 50% { opacity: 0 } }"}</style>
         <nav
           style={{
             height: 52,
@@ -321,7 +325,15 @@ export default function SimulatorPage() {
             Projects
           </button>
           <span style={{ color: C.border }}>|</span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: C.accent, fontFamily: "monospace", letterSpacing: 2 }}>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: C.accent,
+              fontFamily: "monospace",
+              letterSpacing: 2,
+            }}
+          >
             SIMULATOR
           </span>
         </nav>
@@ -338,7 +350,14 @@ export default function SimulatorPage() {
           <div style={{ width: "min(480px, 100%)" }}>
             <div style={{ textAlign: "center", marginBottom: 40 }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>🎭</div>
-              <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800, letterSpacing: "-0.5px" }}>
+              <h1
+                style={{
+                  margin: "0 0 8px",
+                  fontSize: 26,
+                  fontWeight: 800,
+                  letterSpacing: "-0.5px",
+                }}
+              >
                 Dialogue Simulator
               </h1>
               <p style={{ margin: 0, fontSize: 14, color: C.muted, lineHeight: 1.7 }}>
@@ -349,7 +368,14 @@ export default function SimulatorPage() {
             <div style={{ marginBottom: 20 }}>
               <label
                 htmlFor="sim-project"
-                style={{ display: "block", fontSize: 10, fontFamily: "monospace", color: C.muted, letterSpacing: 0.5, marginBottom: 6 }}
+                style={{
+                  display: "block",
+                  fontSize: 10,
+                  fontFamily: "monospace",
+                  color: C.muted,
+                  letterSpacing: 0.5,
+                  marginBottom: 6,
+                }}
               >
                 PROJECT
               </label>
@@ -375,7 +401,9 @@ export default function SimulatorPage() {
               >
                 <option value="">Choose a project…</option>
                 {projects.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -384,7 +412,14 @@ export default function SimulatorPage() {
               <div style={{ marginBottom: 28 }}>
                 <label
                   htmlFor="sim-scene"
-                  style={{ display: "block", fontSize: 10, fontFamily: "monospace", color: C.muted, letterSpacing: 0.5, marginBottom: 6 }}
+                  style={{
+                    display: "block",
+                    fontSize: 10,
+                    fontFamily: "monospace",
+                    color: C.muted,
+                    letterSpacing: 0.5,
+                    marginBottom: 6,
+                  }}
                 >
                   SCENE
                 </label>
@@ -406,7 +441,9 @@ export default function SimulatorPage() {
                 >
                   <option value="">Choose a scene…</option>
                   {scenes.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -456,7 +493,7 @@ export default function SimulatorPage() {
           padding: 24,
         }}
       >
-        <style>{`@keyframes blink { 50% { opacity: 0 } }`}</style>
+        <style>{"@keyframes blink { 50% { opacity: 0 } }"}</style>
         <div style={{ width: "min(560px, 100%)" }}>
           <div style={{ textAlign: "center", marginBottom: 32 }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>🎬</div>
@@ -476,7 +513,16 @@ export default function SimulatorPage() {
                 marginBottom: 20,
               }}
             >
-              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontFamily: "monospace", color: C.muted, letterSpacing: 1 }}>
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderBottom: `1px solid ${C.border}`,
+                  fontSize: 10,
+                  fontFamily: "monospace",
+                  color: C.muted,
+                  letterSpacing: 1,
+                }}
+              >
                 CHOICES MADE
               </div>
               {choiceLog.map((cl, i) => (
@@ -491,7 +537,11 @@ export default function SimulatorPage() {
                     fontSize: 13,
                   }}
                 >
-                  <span style={{ color: C.warn, fontFamily: "monospace", flexShrink: 0, marginTop: 1 }}>⑂</span>
+                  <span
+                    style={{ color: C.warn, fontFamily: "monospace", flexShrink: 0, marginTop: 1 }}
+                  >
+                    ⑂
+                  </span>
                   <div>
                     <div style={{ color: C.text }}>{cl.choice}</div>
                     <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{cl.speaker}</div>
@@ -512,7 +562,16 @@ export default function SimulatorPage() {
               overflowY: "auto",
             }}
           >
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontFamily: "monospace", color: C.muted, letterSpacing: 1 }}>
+            <div
+              style={{
+                padding: "12px 16px",
+                borderBottom: `1px solid ${C.border}`,
+                fontSize: 10,
+                fontFamily: "monospace",
+                color: C.muted,
+                letterSpacing: 1,
+              }}
+            >
               FULL DIALOGUE LOG
             </div>
             {log.map((entry, i) => (
@@ -520,11 +579,18 @@ export default function SimulatorPage() {
                 key={`log-${i}-${entry.speaker}`}
                 style={{
                   padding: "8px 16px",
-                  borderBottom: i < log.length - 1 ? `1px solid #151515` : "none",
+                  borderBottom: i < log.length - 1 ? "1px solid #151515" : "none",
                   fontSize: 12,
                 }}
               >
-                <span style={{ color: entry.color ?? C.accent, fontWeight: 600, marginRight: 8, fontFamily: "monospace" }}>
+                <span
+                  style={{
+                    color: entry.color ?? C.accent,
+                    fontWeight: 600,
+                    marginRight: 8,
+                    fontFamily: "monospace",
+                  }}
+                >
                   {entry.speaker}:
                 </span>
                 <span style={{ color: C.dim }}>{entry.text || "(no text)"}</span>
@@ -588,7 +654,13 @@ export default function SimulatorPage() {
               }}
             >
               <svg width="12" height="12" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M19 12H5M5 12l7-7M5 12l7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path
+                  d="M19 12H5M5 12l7-7M5 12l7 7"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
               Project list
             </button>
@@ -636,10 +708,26 @@ export default function SimulatorPage() {
         <button
           type="button"
           onClick={reset}
-          style={{ background: "none", border: "none", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "monospace", display: "flex", alignItems: "center", gap: 5 }}
+          style={{
+            background: "none",
+            border: "none",
+            color: C.muted,
+            fontSize: 11,
+            cursor: "pointer",
+            fontFamily: "monospace",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
         >
           <svg width="11" height="11" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M19 12H5M5 12l7-7M5 12l7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M19 12H5M5 12l7-7M5 12l7 7"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
           Back
         </button>
@@ -667,7 +755,7 @@ export default function SimulatorPage() {
       >
         {log.map((entry, i) => (
           <div
-            key={`past-${i}`}
+            key={`past-${entry.speaker}-${entry.text}`}
             style={{
               display: "flex",
               gap: 12,
@@ -678,7 +766,14 @@ export default function SimulatorPage() {
           >
             <Silhouette color={entry.color ?? "#333"} size={32} />
             <div>
-              <div style={{ fontSize: 10, fontFamily: "monospace", color: entry.color ?? C.muted, marginBottom: 3 }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontFamily: "monospace",
+                  color: entry.color ?? C.muted,
+                  marginBottom: 3,
+                }}
+              >
                 {entry.speaker}
               </div>
               <div style={{ color: "#666", lineHeight: 1.6 }}>{entry.text || "(no text)"}</div>
@@ -699,7 +794,15 @@ export default function SimulatorPage() {
           >
             <Silhouette color={speakerColor} size={52} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, fontFamily: "monospace", color: speakerColor, marginBottom: 6, fontWeight: 600 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontFamily: "monospace",
+                  color: speakerColor,
+                  marginBottom: 6,
+                  fontWeight: 600,
+                }}
+              >
                 {speakerName}
               </div>
               <div
@@ -754,7 +857,7 @@ export default function SimulatorPage() {
                 onClick={() => pickChoice(ch)}
                 style={{
                   background: "#0d0d1a",
-                  border: `1px solid #2a2a5a`,
+                  border: "1px solid #2a2a5a",
                   borderRadius: 8,
                   color: C.text,
                   fontSize: 14,
@@ -768,11 +871,11 @@ export default function SimulatorPage() {
                   transition: "border-color 0.15s, background 0.15s",
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = C.accent
+                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = C.accent
                   ;(e.currentTarget as HTMLButtonElement).style.background = "#111122"
                 }}
                 onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = "#2a2a5a"
+                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = "#2a2a5a"
                   ;(e.currentTarget as HTMLButtonElement).style.background = "#0d0d1a"
                 }}
               >
@@ -796,7 +899,14 @@ export default function SimulatorPage() {
                 </span>
                 {ch.label || "(no label)"}
                 {!ch.nextId && (
-                  <span style={{ marginLeft: "auto", fontSize: 10, color: C.muted, fontFamily: "monospace" }}>
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      fontSize: 10,
+                      color: C.muted,
+                      fontFamily: "monospace",
+                    }}
+                  >
                     END
                   </span>
                 )}

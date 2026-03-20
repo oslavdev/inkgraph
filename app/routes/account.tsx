@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { redirect, useFetcher, useNavigate } from "react-router"
+import { ToastContainer, useToast } from "../components/toast"
 import { auth } from "../server/auth.server"
-import { ToastContainer, useToast } from "../components/Toast"
 import { requireUser } from "../server/session.server"
 
 const C = {
@@ -186,7 +186,9 @@ function BackBtn({ onBack }: { onBack: () => void }) {
   )
 }
 
-export default function AccountPage({ loaderData }: { loaderData: ReturnType<Awaited<ReturnType<typeof loader>>> extends Promise<infer T> ? T : ReturnType<typeof loader> }) {
+export default function AccountPage({
+  loaderData,
+}: { loaderData: Awaited<ReturnType<typeof loader>> }) {
   const { user } = loaderData
   const navigate = useNavigate()
   const fetcher = useFetcher<typeof action>()
@@ -229,7 +231,11 @@ export default function AccountPage({ loaderData }: { loaderData: ReturnType<Awa
         body: JSON.stringify({ currentPassword: curPw, newPassword: newPw }),
       })
       let data: { message?: string } = {}
-      try { data = await res.json() } catch { /* empty */ }
+      try {
+        data = await res.json()
+      } catch {
+        /* empty */
+      }
       if (!res.ok) throw new Error(data.message ?? "Failed to change password.")
       setCurPw("")
       setNewPw("")

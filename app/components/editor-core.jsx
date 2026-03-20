@@ -94,7 +94,8 @@ function useTree(initialData = null) {
   const activeSceneIdRef = useRef(null)
   activeSceneIdRef.current = activeSceneId
   const [nodesByScene, setNodesByScene] = useState(() => {
-    if (initialData?.nodesByScene && Object.keys(initialData.nodesByScene).length) return initialData.nodesByScene
+    if (initialData?.nodesByScene && Object.keys(initialData.nodesByScene).length)
+      return initialData.nodesByScene
     const nb = restore("vn2-nbs", null)
     if (nb) return nb
     const sid = restore("vn2-scenes", null)?.[0]?.id || uid()
@@ -112,8 +113,7 @@ function useTree(initialData = null) {
   const [sel, setSel] = useState(null)
   const [history, setHistory] = useState([]) // stack of {nodesByScene} snapshots
 
-  const pushHistory = (snap) =>
-    setHistory((h) => [...h.slice(-49), snap]) // keep last 50
+  const pushHistory = (snap) => setHistory((h) => [...h.slice(-49), snap]) // keep last 50
 
   const undo = () => {
     setHistory((h) => {
@@ -202,7 +202,12 @@ function useTree(initialData = null) {
     const nid = uid()
     // Smart placement: if node has choices, offset horizontally
     const hasChoices = from.choices && from.choices.length > 0
-    const effectiveOx = ox !== 0 ? ox : (hasChoices ? (from.choices.length - 1) * 120 - (from.choices.length - 1) * 60 : 0)
+    const effectiveOx =
+      ox !== 0
+        ? ox
+        : hasChoices
+          ? (from.choices.length - 1) * 120 - (from.choices.length - 1) * 60
+          : 0
     const nn = mkNode(nid, from.x + effectiveOx, from.y + NODE_H + 70)
     setNodes((n) => {
       const nx = { ...n, [nid]: nn }
@@ -245,9 +250,7 @@ function useTree(initialData = null) {
         ox = (i - (total - 1) / 2) * 150
         updatedFrom = {
           ...from,
-          choices: from.choices.map((c) =>
-            c.id === emptyChoice.id ? { ...c, nextId: nid } : c
-          ),
+          choices: from.choices.map((c) => (c.id === emptyChoice.id ? { ...c, nextId: nid } : c)),
         }
       } else if (!from.choices || from.choices.length === 0) {
         // No choices at all — normal nextId link
@@ -681,8 +684,20 @@ function Canvas({ tree, viewRef, onJumpToRoot }) {
         }}
       >
         <svg width="10" height="10" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 12L12 3l9 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M9 21V12h6v9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <path
+            d="M3 12L12 3l9 9"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M9 21V12h6v9"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
         Root
       </button>
@@ -1043,7 +1058,8 @@ const SmBtn = ({ onClick, children, color = C.accent }) => (
 
 // ─── Sidebar panels ───────────────────────────────────────────────────────────
 function ScenesPanel({ tree }) {
-  const { scenes, activeSceneId, switchScene, addScene, updateScene, deleteScene, nodesByScene } = tree
+  const { scenes, activeSceneId, switchScene, addScene, updateScene, deleteScene, nodesByScene } =
+    tree
   const [editing, setEditing] = useState(null)
   const [newName, setNewName] = useState("")
   const [dragOver, setDragOver] = useState(null)
@@ -1075,115 +1091,129 @@ function ScenesPanel({ tree }) {
         {scenes.map((sc) => {
           const nodeCount = Object.keys(nodesByScene?.[sc.id]?.nodes ?? {}).length
           return (
-          <div
-            key={sc.id}
-            style={{ borderBottom: "1px solid #141414", opacity: dragOver === sc.id ? 0.5 : 1 }}
-            draggable
-            onDragStart={() => setDragSrc(sc.id)}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(sc.id) }}
-            onDragLeave={() => setDragOver(null)}
-            onDrop={() => { reorderScenes(dragSrc, sc.id); setDragOver(null); setDragSrc(null) }}
-          >
             <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "8px 12px",
-                cursor: "pointer",
-                background: sc.id === activeSceneId ? "#141422" : "transparent",
+              key={sc.id}
+              style={{ borderBottom: "1px solid #141414", opacity: dragOver === sc.id ? 0.5 : 1 }}
+              draggable
+              onDragStart={() => setDragSrc(sc.id)}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDragOver(sc.id)
               }}
-              onClick={() => switchScene(sc.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault()
-                  switchScene(sc.id)
-                }
+              onDragLeave={() => setDragOver(null)}
+              onDrop={() => {
+                reorderScenes(dragSrc, sc.id)
+                setDragOver(null)
+                setDragSrc(null)
               }}
-              /** biome-ignore  lint/a11y/useSemanticElements: div required**/
-              role="button"
-              tabIndex={0}
             >
               <div
                 style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: sc.id === activeSceneId ? C.accent : "#2a2a2a",
-                  flexShrink: 0,
-                  cursor: "grab",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  background: sc.id === activeSceneId ? "#141422" : "transparent",
                 }}
-              />
-              {editing === sc.id ? (
-                <input
-                  ref={inputRef}
-                  value={sc.name}
-                  onChange={(e) => updateScene(sc.id, { name: e.target.value })}
-                  onBlur={() => setEditing(null)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEditing(null) } }}
+                onClick={() => switchScene(sc.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    switchScene(sc.id)
+                  }
+                }}
+                /** biome-ignore  lint/a11y/useSemanticElements: div required**/
+                role="button"
+                tabIndex={0}
+              >
+                <div
                   style={{
-                    background: "transparent",
-                    border: "none",
-                    color: C.text,
-                    fontSize: 12,
-                    outline: "none",
-                    flex: 1,
-                    fontFamily: "inherit",
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: sc.id === activeSceneId ? C.accent : "#2a2a2a",
+                    flexShrink: 0,
+                    cursor: "grab",
                   }}
                 />
-              ) : (
+                {editing === sc.id ? (
+                  <input
+                    ref={inputRef}
+                    value={sc.name}
+                    onChange={(e) => updateScene(sc.id, { name: e.target.value })}
+                    onBlur={() => setEditing(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        setEditing(null)
+                      }
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: C.text,
+                      fontSize: 12,
+                      outline: "none",
+                      flex: 1,
+                      fontFamily: "inherit",
+                    }}
+                  />
+                ) : (
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: sc.id === activeSceneId ? C.text : C.textDim,
+                      flex: 1,
+                    }}
+                    onDoubleClick={() => setEditing(sc.id)}
+                  >
+                    {sc.name}
+                  </span>
+                )}
                 <span
-                  style={{
-                    fontSize: 12,
-                    color: sc.id === activeSceneId ? C.text : C.textDim,
-                    flex: 1,
-                  }}
-                  onDoubleClick={() => setEditing(sc.id)}
+                  style={{ fontSize: 9, color: "#333", fontFamily: "monospace", flexShrink: 0 }}
                 >
-                  {sc.name}
+                  {nodeCount}
                 </span>
-              )}
-              <span style={{ fontSize: 9, color: "#333", fontFamily: "monospace", flexShrink: 0 }}>
-                {nodeCount}
-              </span>
-              {scenes.length > 1 && (
-                <IBtn
-                  style={{ fontSize: 13, color: "#333" }}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    deleteScene(sc.id)
-                  }}
-                >
-                  ×
-                </IBtn>
+                {scenes.length > 1 && (
+                  <IBtn
+                    style={{ fontSize: 13, color: "#333" }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      deleteScene(sc.id)
+                    }}
+                  >
+                    ×
+                  </IBtn>
+                )}
+              </div>
+              {sc.id === activeSceneId && (
+                <div style={{ padding: "0 12px 8px 26px" }}>
+                  <textarea
+                    value={sc.description || ""}
+                    onChange={(e) => updateScene(sc.id, { description: e.target.value })}
+                    placeholder="Scene notes…"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "#0d0d0d",
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 3,
+                      color: C.textDim,
+                      fontSize: 11,
+                      padding: "4px 6px",
+                      resize: "none",
+                      outline: "none",
+                      fontFamily: "inherit",
+                      minHeight: 46,
+                    }}
+                  />
+                </div>
               )}
             </div>
-            {sc.id === activeSceneId && (
-              <div style={{ padding: "0 12px 8px 26px" }}>
-                <textarea
-                  value={sc.description || ""}
-                  onChange={(e) => updateScene(sc.id, { description: e.target.value })}
-                  placeholder="Scene notes…"
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    background: "#0d0d0d",
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 3,
-                    color: C.textDim,
-                    fontSize: 11,
-                    padding: "4px 6px",
-                    resize: "none",
-                    outline: "none",
-                    fontFamily: "inherit",
-                    minHeight: 46,
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        )})
-        }
+          )
+        })}
       </div>
       <div
         style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 6 }}
@@ -1208,7 +1238,7 @@ function ScenesPanel({ tree }) {
           }}
         />
         <button
-        type='button'
+          type="button"
           onClick={() => newName.trim() && (addScene(newName.trim()), setNewName(""))}
           style={{
             background: C.accent,
@@ -1241,7 +1271,6 @@ function CharactersPanel({ tree }) {
         {characters.map((ch) => (
           <div key={ch.id} style={{ borderBottom: "1px solid #141414" }}>
             <div
-            
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -1256,7 +1285,7 @@ function CharactersPanel({ tree }) {
                   setEditing(editing === ch.id ? null : ch.id)
                 }
               }}
-               /** biome-ignore  lint/a11y/useSemanticElements: div required**/
+              /** biome-ignore  lint/a11y/useSemanticElements: div required**/
               role="button"
               tabIndex={0}
             >
@@ -1357,7 +1386,7 @@ function CharactersPanel({ tree }) {
             const c = addChar()
             setEditing(c.id)
           }}
-          type='button'
+          type="button"
           style={{
             width: "100%",
             background: "transparent",
@@ -2011,7 +2040,19 @@ function NodePanel({ node, tree }) {
             <button
               type="button"
               onClick={() => setChoicesCollapsed((c) => !c)}
-              style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", fontFamily: "monospace", fontSize: 9, letterSpacing: 1, display: "flex", alignItems: "center", gap: 4, padding: 0 }}
+              style={{
+                background: "none",
+                border: "none",
+                color: C.textMuted,
+                cursor: "pointer",
+                fontFamily: "monospace",
+                fontSize: 9,
+                letterSpacing: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: 0,
+              }}
             >
               <span>{choicesCollapsed ? "▶" : "▼"}</span>
               {`CHOICES (${node.choices.length})`}
@@ -2028,100 +2069,101 @@ function NodePanel({ node, tree }) {
             </SmBtn>
           }
         />
-        {!choicesCollapsed && node.choices.map((ch, i) => (
-          <div
-            key={ch.id}
-            style={{
-              background: "#0d0d0d",
-              border: `1px solid ${C.border}`,
-              borderRadius: 4,
-              padding: "8px",
-              marginBottom: 8,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-              <span style={{ color: C.warn, fontSize: 9, fontFamily: "monospace" }}>
-                CHOICE {i + 1}
-              </span>
-              <IBtn
-                style={{ fontSize: 12, color: C.danger }}
-                onClick={() => remChoice(node.id, ch.id)}
-              >
-                ×
-              </IBtn>
-            </div>
-            <input
-              value={ch.label}
-              onChange={(e) => updChoice(node.id, ch.id, { label: e.target.value })}
-              placeholder="Choice text…"
+        {!choicesCollapsed &&
+          node.choices.map((ch, i) => (
+            <div
+              key={ch.id}
               style={{
-                width: "100%",
-                boxSizing: "border-box",
-                background: "#111",
+                background: "#0d0d0d",
                 border: `1px solid ${C.border}`,
-                borderRadius: 3,
-                color: C.text,
-                fontSize: 11,
-                padding: "4px 6px",
-                outline: "none",
-                fontFamily: "inherit",
-                marginBottom: 5,
+                borderRadius: 4,
+                padding: "8px",
+                marginBottom: 8,
               }}
-            />
-            {(ch.conditions || []).map((cc) => (
-              <CondRow
-                key={cc.id}
-                cond={cc}
-                variables={variables}
-                onChange={(p) =>
-                  updChoice(node.id, ch.id, {
-                    conditions: ch.conditions.map((c) => (c.id === cc.id ? { ...c, ...p } : c)),
-                  })
-                }
-                onDelete={() =>
-                  updChoice(node.id, ch.id, {
-                    conditions: ch.conditions.filter((c) => c.id !== cc.id),
-                  })
-                }
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                <span style={{ color: C.warn, fontSize: 9, fontFamily: "monospace" }}>
+                  CHOICE {i + 1}
+                </span>
+                <IBtn
+                  style={{ fontSize: 12, color: C.danger }}
+                  onClick={() => remChoice(node.id, ch.id)}
+                >
+                  ×
+                </IBtn>
+              </div>
+              <input
+                value={ch.label}
+                onChange={(e) => updChoice(node.id, ch.id, { label: e.target.value })}
+                placeholder="Choice text…"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  background: "#111",
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 3,
+                  color: C.text,
+                  fontSize: 11,
+                  padding: "4px 6px",
+                  outline: "none",
+                  fontFamily: "inherit",
+                  marginBottom: 5,
+                }}
               />
-            ))}
-            <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-              {ch.nextId ? (
-                <>
-                  <span style={{ color: C.warn, fontSize: 10, fontFamily: "monospace" }}>
-                    → {ch.nextId}
-                  </span>
-                  <SmBtn
-                    onClick={() => updChoice(node.id, ch.id, { nextId: null })}
-                    color={C.danger}
-                  >
-                    ✕
-                  </SmBtn>
-                </>
-              ) : (
-                <>
-                  <SmBtn onClick={() => addNode(node.id, ch.id, i * 60 - 60)} color={C.success}>
-                    + Branch
-                  </SmBtn>
-                  <span style={{ color: "#2a2a2a", fontSize: 10 }}>or drag port</span>
-                </>
-              )}
-              <SmBtn
-                onClick={() =>
-                  updChoice(node.id, ch.id, {
-                    conditions: [
-                      ...(ch.conditions || []),
-                      { id: uid(), varId: "", op: "==", value: "" },
-                    ],
-                  })
-                }
-                color="#6060cc"
-              >
-                + IF
-              </SmBtn>
+              {(ch.conditions || []).map((cc) => (
+                <CondRow
+                  key={cc.id}
+                  cond={cc}
+                  variables={variables}
+                  onChange={(p) =>
+                    updChoice(node.id, ch.id, {
+                      conditions: ch.conditions.map((c) => (c.id === cc.id ? { ...c, ...p } : c)),
+                    })
+                  }
+                  onDelete={() =>
+                    updChoice(node.id, ch.id, {
+                      conditions: ch.conditions.filter((c) => c.id !== cc.id),
+                    })
+                  }
+                />
+              ))}
+              <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+                {ch.nextId ? (
+                  <>
+                    <span style={{ color: C.warn, fontSize: 10, fontFamily: "monospace" }}>
+                      → {ch.nextId}
+                    </span>
+                    <SmBtn
+                      onClick={() => updChoice(node.id, ch.id, { nextId: null })}
+                      color={C.danger}
+                    >
+                      ✕
+                    </SmBtn>
+                  </>
+                ) : (
+                  <>
+                    <SmBtn onClick={() => addNode(node.id, ch.id, i * 60 - 60)} color={C.success}>
+                      + Branch
+                    </SmBtn>
+                    <span style={{ color: "#2a2a2a", fontSize: 10 }}>or drag port</span>
+                  </>
+                )}
+                <SmBtn
+                  onClick={() =>
+                    updChoice(node.id, ch.id, {
+                      conditions: [
+                        ...(ch.conditions || []),
+                        { id: uid(), varId: "", op: "==", value: "" },
+                      ],
+                    })
+                  }
+                  color="#6060cc"
+                >
+                  + IF
+                </SmBtn>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
       </div>
     </div>
   )

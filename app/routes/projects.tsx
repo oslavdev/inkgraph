@@ -21,9 +21,17 @@ function emptyProjectData() {
         root: nodeId,
         nodes: {
           [nodeId]: {
-            id: nodeId, x: 200, y: 120, speaker: "", characterId: null,
-            text: "", choices: [], nextId: null, tag: "none",
-            conditions: [], effects: [],
+            id: nodeId,
+            x: 200,
+            y: 120,
+            speaker: "",
+            characterId: null,
+            text: "",
+            choices: [],
+            nextId: null,
+            tag: "none",
+            conditions: [],
+            effects: [],
           },
         },
       },
@@ -410,7 +418,9 @@ function ProjectCard({ project: p, onOpen, onRename, onDelete }: ProjectCardProp
               role="presentation"
               style={{ position: "fixed", inset: 0, zIndex: 10 }}
               onClick={() => setMenuOpen(false)}
-              onKeyDown={(e) => { if (e.key === "Escape") setMenuOpen(false) }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setMenuOpen(false)
+              }}
             />
             <div
               style={{
@@ -473,11 +483,17 @@ function loadGuestProjects(): Project[] {
   if (typeof window === "undefined") return []
   try {
     return JSON.parse(localStorage.getItem(GUEST_KEY) ?? "[]") as Project[]
-  } catch { return [] }
+  } catch {
+    return []
+  }
 }
 
 function saveGuestProjects(projects: Project[]) {
-  try { localStorage.setItem(GUEST_KEY, JSON.stringify(projects)) } catch { /* noop */ }
+  try {
+    localStorage.setItem(GUEST_KEY, JSON.stringify(projects))
+  } catch {
+    /* noop */
+  }
 }
 
 function mkGuestProject(name: string, description: string): Project {
@@ -497,7 +513,9 @@ function mkGuestProject(name: string, description: string): Project {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ProjectsPage({ loaderData }: { loaderData: { user: { name: string; email: string } | null; projects: Project[] } }) {
+export default function ProjectsPage({
+  loaderData,
+}: { loaderData: { user: { name: string; email: string } | null; projects: Project[] } }) {
   const { user } = loaderData
   const navigate = useNavigate()
   const fetcher = useFetcher<typeof action>()
@@ -505,7 +523,9 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
 
   // Guest projects live in localStorage; server projects come from loaderData
   const [guestProjects, setGuestProjects] = useState<Project[]>([])
-  useEffect(() => { setGuestProjects(loadGuestProjects()) }, [])
+  useEffect(() => {
+    setGuestProjects(loadGuestProjects())
+  }, [])
 
   const projects: Project[] = isGuest ? guestProjects : loaderData.projects
 
@@ -514,9 +534,7 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
 
   // Logged-in: projects from loader are available immediately
   // Guest: projects come from localStorage, loaded in the guestProjects effect below
-  const [showCreate, setShowCreate] = useState(
-    () => !isGuest && loaderData.projects.length === 0
-  )
+  const [showCreate, setShowCreate] = useState(() => !isGuest && loaderData.projects.length === 0)
   // For guests: open modal after localStorage has been read and is still empty
   const guestChecked = useRef(false)
   useEffect(() => {
@@ -537,7 +555,10 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
       if (p) {
         try {
           const d = JSON.parse(p.data) as {
-            scenes?: unknown; nodesByScene?: unknown; characters?: unknown; variables?: unknown
+            scenes?: unknown
+            nodesByScene?: unknown
+            characters?: unknown
+            variables?: unknown
           }
           localStorage.setItem("vn2-scenes", JSON.stringify(d.scenes ?? []))
           localStorage.setItem("vn2-nbs", JSON.stringify(d.nodesByScene ?? {}))
@@ -545,7 +566,9 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
           localStorage.setItem("vn2-vars", JSON.stringify(d.variables ?? []))
           localStorage.setItem("vn2-project-name", p.name)
           localStorage.removeItem("vn2-active-scene")
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         // Touch lastOpenedAt
         const updated = guestProjects.map((x) =>
           x.id === id ? { ...x, lastOpenedAt: Math.floor(Date.now() / 1000) } : x
@@ -598,26 +621,35 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
           fetcher={fetcher}
           onCancel={() => {
             // If no projects exist, going back means going to landing page
-            if (projects.length === 0) { navigate("/"); return }
+            if (projects.length === 0) {
+              navigate("/")
+              return
+            }
             setShowCreate(false)
           }}
-          onGuestSubmit={isGuest ? (name, description) => {
-            const p = mkGuestProject(name, description)
-            setGuestProjects((prev) => {
-              const updated = [p, ...prev]
-              saveGuestProjects(updated)
-              return updated
-            })
-            try {
-              const d = emptyProjectData()
-              localStorage.setItem("vn2-scenes", JSON.stringify(d.scenes))
-              localStorage.setItem("vn2-nbs", JSON.stringify(d.nodesByScene))
-              localStorage.setItem("vn2-chars", JSON.stringify(d.characters ?? []))
-              localStorage.setItem("vn2-vars", JSON.stringify(d.variables ?? []))
-              localStorage.removeItem("vn2-active-scene")
-            } catch { /* noop */ }
-            navigate("/editor")
-          } : undefined}
+          onGuestSubmit={
+            isGuest
+              ? (name, description) => {
+                  const p = mkGuestProject(name, description)
+                  setGuestProjects((prev) => {
+                    const updated = [p, ...prev]
+                    saveGuestProjects(updated)
+                    return updated
+                  })
+                  try {
+                    const d = emptyProjectData()
+                    localStorage.setItem("vn2-scenes", JSON.stringify(d.scenes))
+                    localStorage.setItem("vn2-nbs", JSON.stringify(d.nodesByScene))
+                    localStorage.setItem("vn2-chars", JSON.stringify(d.characters ?? []))
+                    localStorage.setItem("vn2-vars", JSON.stringify(d.variables ?? []))
+                    localStorage.removeItem("vn2-active-scene")
+                  } catch {
+                    /* noop */
+                  }
+                  navigate("/editor")
+                }
+              : undefined
+          }
         />
       )}
 
@@ -630,17 +662,21 @@ export default function ProjectsPage({ loaderData }: { loaderData: { user: { nam
           projectId={renaming.id}
           fetcher={fetcher}
           onCancel={() => setRenaming(null)}
-          onGuestSubmit={isGuest ? (name, description) => {
-            setGuestProjects((prev) => {
-              const updated = prev.map((p) =>
-                p.id === renaming.id
-                  ? { ...p, name, description, updatedAt: Math.floor(Date.now() / 1000) }
-                  : p
-              )
-              saveGuestProjects(updated)
-              return updated
-            })
-          } : undefined}
+          onGuestSubmit={
+            isGuest
+              ? (name, description) => {
+                  setGuestProjects((prev) => {
+                    const updated = prev.map((p) =>
+                      p.id === renaming.id
+                        ? { ...p, name, description, updatedAt: Math.floor(Date.now() / 1000) }
+                        : p
+                    )
+                    saveGuestProjects(updated)
+                    return updated
+                  })
+                }
+              : undefined
+          }
         />
       )}
 

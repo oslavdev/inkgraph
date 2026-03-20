@@ -11,4 +11,5 @@ export default [
   route("account", "routes/account.tsx"),
   route("simulator", "routes/simulator.tsx"),
   route("api/auth/*", "routes/api.auth.$.ts"),
+  route("api/migrate-guest-projects", "routes/api.migrate-guest-projects.ts"),
 ] satisfies RouteConfig

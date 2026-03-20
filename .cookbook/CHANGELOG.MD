@@ -115,3 +115,76 @@ The CHOICES section header is now a clickable toggle showing ▶/▼ and the cou
 #### Keyboard shortcuts
 - `Home` — jump to root node (pan canvas + select)
 - Updated HOTKEYS overlay and Guide modal table
+
+
+---
+
+### Round 4 — Save system, guest migration, and returning player
+
+#### localStorage-first save architecture (editor.tsx)
+Complete rewrite of the save system. Previously the editor relied solely on a 30s autosave interval posting to the DB, meaning any navigation or tab close between intervals lost data.
+
+New architecture:
+- **Every tree change writes to localStorage immediately** via a `useEffect([currentDataStr])`. `useTree` already kept `vn2-*` keys in sync; the new layer additionally updates the guest project entry and the logged-in pending snapshot on every change.
+- **Guests**: `inkgraph-guest-projects` is updated on every change. Save status transitions to "Saved" automatically after 1.5s. No manual save needed.
+- **Logged-in users**: `vn2-pending-{projectId}` is written on every change. This snapshot survives hard closes, crashes, and forced tab kills. DB sync happens via the manual Save button or every 60s auto-sync.
+- **On load for logged-in**: if `vn2-pending-{projectId}` exists, the editor auto-submits it silently with a "Syncing unsaved changes from your last session…" toast, then deletes the key on success.
+- **Navigate away**: guests navigate freely (already saved). Logged-in with unsynced data get a `window.confirm` explaining that data is safe locally and will re-sync on next open.
+- **Tab/window close**: `beforeunload` triggers the browser's native "Leave site?" prompt when logged-in and dirty.
+
+#### Explicit Save button (editor.tsx)
+Replaced the old passive status text with a real interactive button:
+- **Dirty**: indigo filled, "Save", indigo glow — clearly actionable
+- **Saving**: muted, "Syncing…", disabled
+- **Saved**: dark green background, green border, ✓ checkmark, green glow
+- **Idle**: muted, ✓ checkmark, disabled — nothing to sync
+
+Save button is disabled entirely for guests (always saved to localStorage already).
+
+#### Fix: save on "← Projects" navigation (editor.tsx)
+Previously the back button called `navigate("/projects")` directly. React Router's client-side navigation bypasses `beforeunload`, so data was lost. The button now calls `doSaveRef.current()` before navigating for guests (instant localStorage write), and shows a confirm dialog for logged-in users with unsynced changes.
+
+#### Fix: variable declared before useRef (editor.tsx)
+`lastSavedDataRef` was referenced in an init block before the `useRef` call that created it — a hard TypeScript/Biome error (`noInvalidUseBeforeDeclaration`). Fixed by moving the init block and `currentDataStr` computation to after the ref declaration.
+
+#### Guest → account project migration (login.tsx, api.migrate-guest-projects.ts)
+When a guest registers or signs in, all projects from `inkgraph-guest-projects` are automatically imported into their account:
+
+1. `migrateGuestProjects()` runs client-side immediately after successful auth
+2. POSTs the guest project array to `POST /api/migrate-guest-projects`
+3. Server requires a valid session, then calls `createProject` for each entry
+4. Guest localStorage is cleared — account becomes the single source of truth
+
+**Merge strategy** for the edge case where the account already has projects (e.g. user forgot they registered, created guest projects, then logged in on another device):
+- Same name exists → incoming project is renamed `"<name> (imported)"` — nothing is overwritten
+- New name → imported as-is
+- Both versions are always preserved
+
+#### Returning player cookie + welcome-back banner (projects.tsx)
+When a guest creates their first project, a 1-year cookie `inkgraph-returning=1` is set. On the projects page, if the user is a guest, has this cookie, and has at least one local project, a banner appears:
+
+> 👋 **Welcome back!** Your projects are saved locally. **Sign in to sync to the cloud** and access from any device.
+
+Two actions: **Sign in** (navigates to `/login?from=/projects`) and **Dismiss**. The banner reappears on every visit until they sign in or dismiss. After sign-in and migration, `inkgraph-guest-projects` is cleared so the banner condition stops being true.
+
+#### Login: context-aware back button (login.tsx)
+The "Back to home" button (always navigated to `/`) is now **"Back"** and navigates contextually:
+- `?from=` param present → go there (e.g. `/editor` when coming from the editor's Sign in button)
+- Otherwise → `navigate(-1)` browser history back
+
+The editor's guest account button now shows **"Sign in"** and navigates to `/login?from=/editor`.
+
+#### Biome lint fixes across all files
+- `type="button"` added to all untyped `<button>` elements (80+ across routes and editor-core)
+- `forEach` → `for...of` in 4 places (`home.tsx` BLOBS, `editor-core.jsx` delNode and two choices loops); closing braces corrected
+- Bare template literals without `${}` → double-quoted strings (13 in editor-core, 2 in simulator)
+- `aria-hidden="true"` added to all decorative SVGs missing it
+- `onKeyDown` added to all interactive non-button elements (Arrow `<g>`, color swatches, tag/character selectors, guide nav dots)
+- `htmlFor` + matching `id` added to all 6 labels in the ProfileModal mockup form
+- Duplicate `type="button"` removed from login back button
+
+#### GitHub Actions + semantic-release
+- `.github/workflows/release.yml` — triggers on push to `main`, runs `semantic-release`
+- `.releaserc.json` — conventional commits → CHANGELOG → package.json bump → GitHub Release (no npm publish)
+- `.commitlintrc.json` — enforces conventional commit format
+- `.husky/pre-commit` + `.husky/commit-msg` — lint-staged (Biome) and commitlint hooks
